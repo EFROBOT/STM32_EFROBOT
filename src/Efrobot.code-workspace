@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../../../../GitHub/Efrobot"
+		},
+		{
+			"name": "STM32_EFROBOT",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}
