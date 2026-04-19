@@ -1,62 +1,71 @@
 #include <Arduino.h>
+#include <Wire.h>
+#include "imu.h"
+#include "motor.h"
 
-// Configuration
-int LED = 13;
-bool start = false;
-unsigned long lastHeartbeat = 0;
-const unsigned long HEARTBEAT_INTERVAL = 1000; 
+void envoyer_position() {
+  Serial.print("POS ");
+  Serial.print(x_robot, 2);
+  Serial.print(" ");
+  Serial.print(y_robot, 2);
+  Serial.print(" ");
+  Serial.println(AngleYaw, 2);
+}
 
-String readString;
-String vx;
-String vy;
-String omega;
-int ind1; // , locations
-int ind2;
-int ind3;
-int ind4;
-
-void establishContact();
-void sendHeartbeat();
+void traiter_commande(String cmd) {
+  cmd.trim();
+  if (cmd.startsWith("AC")) {
+    float x, y; sscanf(cmd.c_str(), "AC %f %f", &x, &y);
+    aller_a_coord(x / 100.0, y / 100.0);
+  } else if (cmd.startsWith("TVA")) {
+    float a; sscanf(cmd.c_str(), "TVA %f", &a);
+    tourner_vers_angle(a);
+  } else if (cmd.startsWith("A")) {
+    float d; sscanf(cmd.c_str(), "A %f", &d); avancer(d);
+  } else if (cmd.startsWith("R")) {
+    float d; sscanf(cmd.c_str(), "R %f", &d); reculer(d);
+  } else if (cmd.startsWith("D")) {
+    float d; sscanf(cmd.c_str(), "D %f", &d); droite(d);
+  } else if (cmd.startsWith("G")) {
+    float d; sscanf(cmd.c_str(), "G %f", &d); gauche(d);
+  } else if (cmd.startsWith("DG")) {
+    float d; sscanf(cmd.c_str(), "DG %f", &d); diagonale_gauche(d);
+  } else if (cmd.startsWith("DD")) {
+    float d; sscanf(cmd.c_str(), "DD %f", &d); diagonale_droite(d);
+  } else if (cmd.startsWith("RH")) {
+    float d; sscanf(cmd.c_str(), "RH %f", &d);
+    rotation_gauche(d);
+  } else if (cmd.startsWith("RAH")) {
+    float d; sscanf(cmd.c_str(), "RAH %f", &d);
+    rotation_droite(d);
+  }
+  envoyer_position();
+}
 
 void setup() {
-
-  pinMode(LED, OUTPUT);
-
   Serial.begin(115200);
-
+  pinMode(13, OUTPUT);
+  digitalWrite(13, HIGH);
+  
+  Wire.setClock(400000);
+  Wire.begin();
+  delay(250);
+  init_imu();
+  init_motors();
+  Serial.println("Pret !");
 }
 
 void loop() {
-  // Read incoming serial data character by character
-  while (Serial.available()) {
-    char c = Serial.read();
-    readString += c;
-    
-    if (c == '\n') {
-      // Parse the command: "vx,vy,omega\n"
-      ind1 = readString.indexOf(',');
-      vx = readString.substring(0, ind1);
-      ind2 = readString.indexOf(',', ind1 + 1);
-      vy = readString.substring(ind1 + 1, ind2);
-      ind3 = readString.indexOf('\n', ind2 + 1);
-      omega = readString.substring(ind2 + 1, ind3);
-      
-      Serial.print("vx: ");
-      Serial.print(vx);
-      Serial.print(" vy: ");
-      Serial.print(vy);
-      Serial.print(" omega: ");
-      Serial.println(omega);
-      
-      readString = "";
-    }
-  }
-  
-  digitalWrite(LED, start ? HIGH : LOW);
+  update_imu();
 
-  unsigned long currentTime = millis();
-  if (currentTime - lastHeartbeat >= HEARTBEAT_INTERVAL) {
-    Serial.print("OK\n");
-    lastHeartbeat = currentTime;
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    traiter_commande(cmd);
+  }
+
+  static unsigned long last_send = 0;
+  if (millis() - last_send > 50) {
+    envoyer_position();
+    last_send = millis();
   }
 }
