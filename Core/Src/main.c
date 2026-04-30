@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,6 +32,19 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define Counter_Period 65535
+#define vitesse_moteur 30000
+#define diametre_roue 8
+#define PI 3.14
+
+// #define Vitesse (PI * diametre_roue * RPM)/60)
+#define Temps_test 3000
+#define L 0.0115
+#define Lambda 0.0115
+
+#define PWM_MAX 60000
+#define PWM_MIN 15000
 
 /* USER CODE END PD */
 
@@ -58,6 +72,16 @@ UART_HandleTypeDef huart2;
 
 int32_t encoder1, encoder2, encoder3, encoder4;
 
+// asservissement
+typedef struct {
+    float kp, ki, kd;
+    float integrale;
+    float erreur_precedente;
+} PID_Vitesse_t;
+
+PID_Vitesse_t pid1, pid2, pid3, pid4;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -79,6 +103,227 @@ static void MX_IWDG_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/*
+float temps_activation(float distance){
+	return ((distance / Vitesse) * 1000);
+}*/
+
+
+void safe_delay(uint32_t ms) {
+    uint32_t start = HAL_GetTick();
+    while ((HAL_GetTick() - start) < ms) {
+        HAL_IWDG_Refresh(&hiwdg);
+        HAL_Delay(10);
+    }
+}
+
+// set motors
+
+void stop_motors(){
+	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0); // In1 -- avancer
+	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0); // In2 = Low -- reculer
+
+	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, 0); // In1
+	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 0); // In2 = Low
+
+	  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, 0); // In1
+	  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_2, 0); // In2 = Low
+
+	  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, 0); // In1
+	  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0); // In2 = Low
+}
+
+void set_one_motor(TIM_HandleTypeDef *htim, uint32_t canal_0, uint32_t canal_1, int dir){
+	if (dir > 0){
+		__HAL_TIM_SET_COMPARE(htim, canal_0, 0);
+		__HAL_TIM_SET_COMPARE(htim, canal_1, vitesse_moteur);
+	} else if (dir < 0){
+		__HAL_TIM_SET_COMPARE(htim, canal_1, 0);
+		__HAL_TIM_SET_COMPARE(htim, canal_0, vitesse_moteur);
+	} else if (dir == 0) {
+		__HAL_TIM_SET_COMPARE(htim, canal_0, 0);
+		__HAL_TIM_SET_COMPARE(htim, canal_1, 0);
+	}
+}
+
+void run_motors(int dir1, int dir2, int dir3, int dir4, float temps){
+	set_one_motor(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, dir1);
+	set_one_motor(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, dir2);
+
+	set_one_motor(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, dir3);
+	set_one_motor(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, dir4);
+
+	safe_delay(temps);
+	stop_motors();
+}
+
+
+// asservissement
+
+void PID_Vitesse_Init(PID_Vitesse_t *p, float kp, float ki, float kd) {
+    p->kp = kp;
+    p->ki = ki;
+    p->kd = kd;
+    p->integrale = 0;
+    p->erreur_precedente = 0;
+}
+
+float calculer_commande_PID(PID_Vitesse_t *p, float consigne, float vitesse_mesuree, float dt) {
+    float erreur = consigne - vitesse_mesuree;
+    p->integrale += erreur * dt;
+    float derivee = (erreur - p->erreur_precedente) / dt;
+    p->erreur_precedente = erreur;
+
+    float commande = (p->kp * erreur) + (p->ki * p->integrale) + (p->kd * derivee);
+    return commande;
+}
+
+void set_motor_pwm(TIM_HandleTypeDef *htim, uint32_t canal_0,
+                   uint32_t canal_1, float commande)
+{
+    // Clamp avant tout
+    if (commande >  PWM_MAX) commande =  PWM_MAX;
+    if (commande < -PWM_MAX) commande = -PWM_MAX;
+
+    uint32_t pwm_val = (uint32_t)fabsf(commande);
+
+    if (commande > 0) {
+        __HAL_TIM_SET_COMPARE(htim, canal_0, 0);
+        __HAL_TIM_SET_COMPARE(htim, canal_1, pwm_val);
+    } else if (commande < 0) {
+        __HAL_TIM_SET_COMPARE(htim, canal_1, 0);
+        __HAL_TIM_SET_COMPARE(htim, canal_0, pwm_val);
+    } else {
+        __HAL_TIM_SET_COMPARE(htim, canal_0, 0);
+        __HAL_TIM_SET_COMPARE(htim, canal_1, 0);
+    }
+}
+
+// fonction test pour regler les pid
+
+void test_PID_5s(float consigne_vitesse) {
+    uint32_t start_time = HAL_GetTick();
+    uint32_t last_pid_time = start_time;
+
+    int32_t last_enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
+    int32_t last_enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+    int32_t last_enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+    int32_t last_enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
+
+    while ((HAL_GetTick() - start_time) < Temps_test) {
+
+        HAL_IWDG_Refresh(&hiwdg);
+
+        uint32_t current_time = HAL_GetTick();
+        uint32_t delta_t_ms = current_time - last_pid_time;
+
+        if (delta_t_ms >= 50) {
+            float dt = delta_t_ms / 1000.0f;
+
+            int32_t enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
+            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
+
+            int32_t d1 = enc1 - last_enc1;
+            int32_t d2 = enc2 - last_enc2;
+            int32_t d3 = enc3 - last_enc3;
+            int32_t d4 = enc4 - last_enc4;
+
+            if (d1 >  32767) d1 -= 65536;  if (d1 < -32768) d1 += 65536;
+            if (d2 >  32767) d2 -= 65536;  if (d2 < -32768) d2 += 65536;
+            if (d3 >  32767) d3 -= 65536;  if (d3 < -32768) d3 += 65536;
+            if (d4 >  32767) d4 -= 65536;  if (d4 < -32768) d4 += 65536;
+
+            float v1 = (d1 / 1320.0f) / dt;
+            float v2 = (d2 / 1320.0f) / dt;
+            float v3 = (d3 / 1320.0f) / dt;
+            float v4 = (d4 / 1320.0f) / dt;
+
+            float cmd1 = calculer_commande_PID(&pid1, consigne_vitesse, v1, dt);
+            float cmd2 = calculer_commande_PID(&pid2, consigne_vitesse, v2, dt);
+            float cmd3 = calculer_commande_PID(&pid3, consigne_vitesse, v3, dt);
+            float cmd4 = calculer_commande_PID(&pid4, consigne_vitesse, v4, dt);
+
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
+            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
+            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
+
+            last_enc1 = enc1;
+            last_enc2 = enc2;
+            last_enc3 = enc3;
+            last_enc4 = enc4;
+            last_pid_time = current_time;
+
+            char buf[128];
+            int len = snprintf(
+                buf, sizeof(buf),
+                "V1:%.2f V2:%.2f V3:%.2f V4:%.2f | Enc1:%ld Enc2:%ld Enc3:%ld Enc4:%ld \r\n",
+                v1, v2, v3, v4,
+                enc1, enc2, enc3, enc4
+            );
+            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 5);
+
+        }
+
+        HAL_Delay(1);
+    }
+
+    stop_motors();
+}
+
+
+
+
+
+
+
+// mouvement
+
+// fonction test
+
+
+
+
+void avancer(float distance){
+	run_motors(1, 1, 1, 1, Temps_test);
+}
+
+void reculer(float distance){
+	run_motors(-1, -1, -1, -1, Temps_test);
+}
+
+void droite(float distance){
+	run_motors(-1, -1, 1, 1, Temps_test);
+}
+
+void gauche(float distance){
+	run_motors(1, 1, -1, -1, Temps_test);
+}
+
+void diagonale_droite(float distance){
+	run_motors(1, 0, 0, -1, Temps_test);
+}
+
+void diagonale_gauche(float distance){
+	run_motors(0, -1, 1, 0, Temps_test);
+}
+
+/*
+void rotation_droite(float angle){
+	float angle_rad = angle * PI / 180.0;
+	float arc = angle_rad * (L + LAMBDA);
+	run_motors(1, 1, 1, 1, Temps_test);
+}
+
+void rotation_gauche(float angle){
+	float angle_rad = angle * PI / 180.0;
+	float arc = angle_rad * (L + LAMBDA);
+	run_motors(-1, -1, -1 -1, Temps_test);
+}*/
+
 
 /* USER CODE END 0 */
 
@@ -123,7 +368,7 @@ int main(void)
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
-  // Timer 1 tim 8
+  // Timer 1
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1); // motor 1 In1
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2); // motor 1 In2
   __HAL_TIM_MOE_ENABLE(&htim1);
@@ -131,12 +376,6 @@ int main(void)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3); // motor 2 In1
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4); // motor 2 In2
   __HAL_TIM_MOE_ENABLE(&htim1);
-
-  // enable motor
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 50000); // In1
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0); // In2 = Low
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, 50000); // In1
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 0); // In2 = Low
 
   // Timer 2 & 3 & 4 & 5 --> encodeur
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
@@ -153,12 +392,25 @@ int main(void)
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4); // motor 4 In2
   __HAL_TIM_MOE_ENABLE(&htim8);
 
-  // enable motor tim 8
-  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, 50000); // In1
-  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_2, 0); // In2 = Low
-  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, 50000); // In1
-  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0); // In2 = Low
+  // PIDS init
+  PID_Vitesse_Init(&pid1, 60000.0, 33000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid2, 60000.0, 35000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid3, 60000.0, 25000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid4, 50000.0, 25000.0, 0.0); // ok
+
   // Imu i2c
+  //safe_delay(1000);
+  //avancer(150);
+
+    //safe_delay(1000);
+    //test_PID_5s(2.0);
+    safe_delay(1000);
+    test_PID_5s_reculer(2.0);
+
+
+    //mecanum_move_pid(2.0, 2.0, 2.0, 2.0, 2000);
+    //safe_delay(500);
+
 
   /* USER CODE END 2 */
 
@@ -168,13 +420,15 @@ int main(void)
   {
       HAL_IWDG_Refresh(&hiwdg);
 
+
       HAL_Delay(100);
 
-  /* USER CODE END WHILE */
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
-
 
 /**
   * @brief System Clock Configuration
@@ -406,7 +660,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
@@ -553,7 +807,7 @@ static void MX_TIM5_Init(void)
   htim5.Instance = TIM5;
   htim5.Init.Prescaler = 0;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 4294967295;
+  htim5.Init.Period = 65535 ;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
@@ -779,7 +1033,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_1|led_Pin|GPIO_PIN_4, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
@@ -794,12 +1048,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PC0 PC1 PC4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_4;
+  /*Configure GPIO pins : PC0 PC1 led_Pin PC4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|led_Pin|GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : interrupteur_Pin */
+  GPIO_InitStruct.Pin = interrupteur_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(interrupteur_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
