@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
+#include "stdlib.h"
 #include <math.h>
 /* USER CODE END Includes */
 
@@ -35,16 +36,28 @@
 
 #define Counter_Period 65535
 #define vitesse_moteur 30000
-#define diametre_roue 8
-#define PI 3.14
+
+
+
+#define PPR          1320
+#define DIAMETRE_M   0.08 // = 80 cm
+#define PI           3.14159
+
+#define V_MAX  2.0   // tr/s vitesse max
+#define V_MIN  0.4   // tr/s vitesse minimum (juste assez pour bouger)
+#define SEUIL  100    // ticks d'arrêt
+#define ZONE_DECEL 800
+
 
 // #define Vitesse (PI * diametre_roue * RPM)/60)
 #define Temps_test 3000
 #define L 0.0115
 #define Lambda 0.0115
 
+#define V 2.0
+
 #define PWM_MAX 60000
-#define PWM_MIN 15000
+#define PWM_MIN 20000
 
 /* USER CODE END PD */
 
@@ -104,10 +117,10 @@ static void MX_IWDG_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/*
-float temps_activation(float distance){
-	return ((distance / Vitesse) * 1000);
-}*/
+int32_t distance_en_ticks(float metres) {
+    float tours = metres / (PI * DIAMETRE_M);
+    return (int32_t)(tours * PPR);
+}
 
 
 void safe_delay(uint32_t ms) {
@@ -179,12 +192,34 @@ float calculer_commande_PID(PID_Vitesse_t *p, float consigne, float vitesse_mesu
     return commande;
 }
 
+float calculer_commande_PID_position(PID_Vitesse_t *p, int32_t consigne_ticks,
+                                      int32_t position_actuelle, float dt)
+{
+    float erreur   = (float)(consigne_ticks - position_actuelle);
+    p->integrale  += erreur * dt;
+    float derivee  = (erreur - p->erreur_precedente) / dt;
+    p->erreur_precedente = erreur;
+
+    float commande = (p->kp * erreur)
+                   + (p->ki * p->integrale)
+                   + (p->kd * derivee);
+    return commande;
+}
+
+
 void set_motor_pwm(TIM_HandleTypeDef *htim, uint32_t canal_0,
                    uint32_t canal_1, float commande)
 {
     // Clamp avant tout
     if (commande >  PWM_MAX) commande =  PWM_MAX;
     if (commande < -PWM_MAX) commande = -PWM_MAX;
+
+    if (commande > 0   && commande < 8000)  commande = 0;
+    if (commande < 0   && commande > -8000) commande = 0;
+
+    if (commande >= 8000  && commande < PWM_MIN) commande = PWM_MIN;
+    if (commande <= -8000 && commande > -PWM_MIN) commande = -PWM_MIN;
+
 
     uint32_t pwm_val = (uint32_t)fabsf(commande);
 
@@ -277,6 +312,225 @@ void test_PID_5s(float consigne_vitesse) {
 
 
 
+void mecanum_move_position(float vHR, float vBR, float vHL, float vBL,
+                           float metres)
+{
+    int32_t ticks_cible = (int32_t)(metres / (PI * DIAMETRE_M) * PPR);
+
+    // Reset PIDs
+    pid1.integrale = 0; pid1.erreur_precedente = 0;
+    pid2.integrale = 0; pid2.erreur_precedente = 0;
+    pid3.integrale = 0; pid3.erreur_precedente = 0;
+    pid4.integrale = 0; pid4.erreur_precedente = 0;
+
+    // Reset encodeurs
+    __HAL_TIM_SET_COUNTER(&htim2, 0);
+    __HAL_TIM_SET_COUNTER(&htim3, 0);
+    __HAL_TIM_SET_COUNTER(&htim4, 0);
+    __HAL_TIM_SET_COUNTER(&htim5, 0);
+
+    int32_t pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    int32_t last_enc1 = 0, last_enc2 = 0;
+    int32_t last_enc3 = 0, last_enc4 = 0;
+    uint32_t last_time = HAL_GetTick();
+
+    // Cible signée par roue selon le mouvement
+    int32_t cible1 = (int32_t)(vHR * ticks_cible);
+    int32_t cible2 = (int32_t)(vBR * ticks_cible);
+    int32_t cible3 = (int32_t)(vHL * ticks_cible);
+    int32_t cible4 = (int32_t)(vBL * ticks_cible);
+
+
+    while (1) {
+        HAL_IWDG_Refresh(&hiwdg);
+
+        uint32_t now      = HAL_GetTick();
+        uint32_t delta_ms = now - last_time;
+
+        if (delta_ms >= 50) {
+            float dt = delta_ms / 1000.0f;
+
+            int32_t enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
+            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
+
+            int32_t d1 = enc1 - last_enc1;
+            int32_t d2 = enc2 - last_enc2;
+            int32_t d3 = enc3 - last_enc3;
+            int32_t d4 = enc4 - last_enc4;
+
+            if (d1 >  32767) d1 -= 65536; if (d1 < -32768) d1 += 65536;
+            if (d2 >  32767) d2 -= 65536; if (d2 < -32768) d2 += 65536;
+            if (d3 >  32767) d3 -= 65536; if (d3 < -32768) d3 += 65536;
+            if (d4 >  32767) d4 -= 65536; if (d4 < -32768) d4 += 65536;
+
+            pos1 += d1; pos2 += d2;
+            pos3 += d3; pos4 += d4;
+
+            // PID position → PWM directement
+            float cmd1 = calculer_commande_PID_position(&pid1, cible1, pos1, dt);
+            float cmd2 = calculer_commande_PID_position(&pid2, cible2, pos2, dt);
+            float cmd3 = calculer_commande_PID_position(&pid3, cible3, pos3, dt);
+            float cmd4 = calculer_commande_PID_position(&pid4, cible4, pos4, dt);
+
+            if (abs(cible1 - pos1) < SEUIL) cmd1 = 0;
+            if (abs(cible2 - pos2) < SEUIL) cmd2 = 0;
+            if (abs(cible3 - pos3) < SEUIL) cmd3 = 0;
+            if (abs(cible4 - pos4) < SEUIL) cmd4 = 0;
+
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
+            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
+            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
+
+            last_enc1 = enc1; last_enc2 = enc2;
+            last_enc3 = enc3; last_enc4 = enc4;
+            last_time = now;
+
+            char buf[200];
+            int len = snprintf(buf, sizeof(buf),
+                "Enc1:%ld Enc2:%ld Enc3:%ld Enc4:%ld | E1:%ld E2:%ld E3:%ld E4:%ld \r\n",
+				enc1, enc2, enc3, enc4,
+                cible1-pos1, cible2-pos2, cible3-pos3, cible4-pos4);
+            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 5);
+
+            // Arrêt quand toutes les roues ont atteint leur cible
+            if (abs(cible1-pos1) < SEUIL && abs(cible2-pos2) < SEUIL &&
+                abs(cible3-pos3) < SEUIL && abs(cible4-pos4) < SEUIL) {
+                break;
+            }
+        }
+        HAL_Delay(1);
+    }
+    stop_motors();
+}
+
+
+
+void mecanum_move_position_v2(float vHR, float vBR, float vHL, float vBL,
+                               float metres)
+{
+    int32_t ticks_cible = (int32_t)(metres / (PI * DIAMETRE_M) * PPR);
+
+    // Reset PIDs
+    pid1.integrale = 0; pid1.erreur_precedente = 0;
+    pid2.integrale = 0; pid2.erreur_precedente = 0;
+    pid3.integrale = 0; pid3.erreur_precedente = 0;
+    pid4.integrale = 0; pid4.erreur_precedente = 0;
+
+    __HAL_TIM_SET_COUNTER(&htim2, 0);
+    __HAL_TIM_SET_COUNTER(&htim3, 0);
+    __HAL_TIM_SET_COUNTER(&htim4, 0);
+    __HAL_TIM_SET_COUNTER(&htim5, 0);
+
+    int32_t pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    int32_t last_enc1 = 0, last_enc2 = 0;
+    int32_t last_enc3 = 0, last_enc4 = 0;
+    uint32_t last_time = HAL_GetTick();
+    uint32_t timeout   = HAL_GetTick();
+
+    int32_t cible1 = (int32_t)(vHR * ticks_cible);
+    int32_t cible2 = (int32_t)(vBR * ticks_cible);
+    int32_t cible3 = (int32_t)(vHL * ticks_cible);
+    int32_t cible4 = (int32_t)(vBL * ticks_cible);
+
+
+    while (1) {
+        HAL_IWDG_Refresh(&hiwdg);
+
+        if ((HAL_GetTick() - timeout) > 10000) break;
+
+        uint32_t now      = HAL_GetTick();
+        uint32_t delta_ms = now - last_time;
+
+        if (delta_ms >= 50) {
+            float dt = delta_ms / 1000.0f;
+
+            int32_t enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
+            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
+
+            int32_t d1 = enc1 - last_enc1;
+            int32_t d2 = enc2 - last_enc2;
+            int32_t d3 = enc3 - last_enc3;
+            int32_t d4 = enc4 - last_enc4;
+
+            if (d1 >  32767) d1 -= 65536; if (d1 < -32768) d1 += 65536;
+            if (d2 >  32767) d2 -= 65536; if (d2 < -32768) d2 += 65536;
+            if (d3 >  32767) d3 -= 65536; if (d3 < -32768) d3 += 65536;
+            if (d4 >  32767) d4 -= 65536; if (d4 < -32768) d4 += 65536;
+
+            pos1 += d1; pos2 += d2;
+            pos3 += d3; pos4 += d4;
+
+            float v1 = (d1 / 1320.0f) / dt;
+            float v2 = (d2 / 1320.0f) / dt;
+            float v3 = (d3 / 1320.0f) / dt;
+            float v4 = (d4 / 1320.0f) / dt;
+
+            int32_t err1 = abs(cible1 - pos1);
+            int32_t err2 = abs(cible2 - pos2);
+            int32_t err3 = abs(cible3 - pos3);
+            int32_t err4 = abs(cible4 - pos4);
+
+            float vc1, vc2, vc3, vc4;
+
+            // Roue 1
+            if      (err1 < SEUIL)      vc1 = 0;
+            else if (err1 > ZONE_DECEL) vc1 = V_MAX;
+            else                        vc1 = V_MAX * ((float)err1 / ZONE_DECEL);
+            if (vc1 > 0 && vc1 < V_MIN) vc1 = V_MIN;
+            if (cible1 < 0) vc1 = -vc1;
+
+            // Roue 2
+            if      (err2 < SEUIL)      vc2 = 0;
+            else if (err2 > ZONE_DECEL) vc2 = V_MAX;
+            else                        vc2 = V_MAX * ((float)err2 / ZONE_DECEL);
+            if (vc2 > 0 && vc2 < V_MIN) vc2 = V_MIN;
+            if (cible2 < 0) vc2 = -vc2;
+
+            // Roue 3
+            if      (err3 < SEUIL)      vc3 = 0;
+            else if (err3 > ZONE_DECEL) vc3 = V_MAX;
+            else                        vc3 = V_MAX * ((float)err3 / ZONE_DECEL);
+            if (vc3 > 0 && vc3 < V_MIN) vc3 = V_MIN;
+            if (cible3 < 0) vc3 = -vc3;
+
+            // Roue 4
+            if      (err4 < SEUIL)      vc4 = 0;
+            else if (err4 > ZONE_DECEL) vc4 = V_MAX;
+            else                        vc4 = V_MAX * ((float)err4 / ZONE_DECEL);
+            if (vc4 > 0 && vc4 < V_MIN) vc4 = V_MIN;
+            if (cible4 < 0) vc4 = -vc4;
+
+            float cmd1 = (vc1 != 0) ? calculer_commande_PID(&pid1, vc1, v1, dt) : 0;
+            float cmd2 = (vc2 != 0) ? calculer_commande_PID(&pid2, vc2, v2, dt) : 0;
+            float cmd3 = (vc3 != 0) ? calculer_commande_PID(&pid3, vc3, v3, dt) : 0;
+            float cmd4 = (vc4 != 0) ? calculer_commande_PID(&pid4, vc4, v4, dt) : 0;
+
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
+            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
+            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
+
+            last_enc1 = enc1; last_enc2 = enc2;
+            last_enc3 = enc3; last_enc4 = enc4;
+            last_time = now;
+
+            char buf[200];
+            int len = snprintf(buf, sizeof(buf),
+                "Enc1:%ld Enc2:%ld Enc3:%ld Enc4:%ld\r\n",
+                enc1, enc2, enc3, enc4);
+            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 5);
+
+            if (err1 < SEUIL && err2 < SEUIL && err3 < SEUIL && err4 < SEUIL) break;
+        }
+        HAL_Delay(1);
+    }
+    stop_motors();
+}
 
 
 
@@ -284,32 +538,107 @@ void test_PID_5s(float consigne_vitesse) {
 
 // fonction test
 
+void mecanum_move_pid(float vFL, float vFR, float vBL, float vBR, uint32_t duree_ms)
+{
+    // Reset PIDs
+    pid1.integrale = 0; pid1.erreur_precedente = 0;
+    pid2.integrale = 0; pid2.erreur_precedente = 0;
+    pid3.integrale = 0; pid3.erreur_precedente = 0;
+    pid4.integrale = 0; pid4.erreur_precedente = 0;
+
+    uint32_t start_time    = HAL_GetTick();
+    uint32_t last_pid_time = start_time;
+
+    int32_t last_enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
+    int32_t last_enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+    int32_t last_enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+    int32_t last_enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
+
+    while ((HAL_GetTick() - start_time) < duree_ms) {
+        HAL_IWDG_Refresh(&hiwdg);
+
+        uint32_t current_time = HAL_GetTick();
+        uint32_t delta_t_ms   = current_time - last_pid_time;
+
+        if (delta_t_ms >= 50) {
+            float dt = delta_t_ms / 1000.0f;
+
+            int32_t enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
+            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
+
+            int32_t d1 = enc1 - last_enc1;
+            int32_t d2 = enc2 - last_enc2;
+            int32_t d3 = enc3 - last_enc3;
+            int32_t d4 = enc4 - last_enc4;
+
+            if (d1 >  32767) d1 -= 65536; if (d1 < -32768) d1 += 65536;
+            if (d2 >  32767) d2 -= 65536; if (d2 < -32768) d2 += 65536;
+            if (d3 >  32767) d3 -= 65536; if (d3 < -32768) d3 += 65536;
+            if (d4 >  32767) d4 -= 65536; if (d4 < -32768) d4 += 65536;
+
+            float v1 = (d1 / 1320.0f) / dt;
+            float v2 = (d2 / 1320.0f) / dt;
+            float v3 = (d3 / 1320.0f) / dt;
+            float v4 = (d4 / 1320.0f) / dt;
+
+            // Consigne différente par roue
+            float cmd1 = calculer_commande_PID(&pid1, vFL, v1, dt);
+            float cmd2 = calculer_commande_PID(&pid2, vFR, v2, dt);
+            float cmd3 = calculer_commande_PID(&pid3, vBL, v3, dt);
+            float cmd4 = calculer_commande_PID(&pid4, vBR, v4, dt);
+
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
+            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
+            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
+
+            last_enc1 = enc1; last_enc2 = enc2;
+            last_enc3 = enc3; last_enc4 = enc4;
+            last_pid_time = current_time;
 
 
+            char buf[200];
+            int len = snprintf(buf, sizeof(buf),
+                "HR:%ld BR:%ld HL:%ld BL:%ld \r\n",
+                enc1, enc2, enc3, enc4);
+            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 5);
 
-void avancer(float distance){
-	run_motors(1, 1, 1, 1, Temps_test);
+        }
+        HAL_Delay(1);
+    }
+    stop_motors();
 }
 
-void reculer(float distance){
-	run_motors(-1, -1, -1, -1, Temps_test);
+
+
+void avancer(uint32_t time){
+	mecanum_move_pid(V,  V,  V,  V, time);
 }
 
-void droite(float distance){
-	run_motors(-1, -1, 1, 1, Temps_test);
+void reculer(uint32_t time){
+	mecanum_move_pid(-V,  -V,  -V,  -V, time);
 }
 
-void gauche(float distance){
-	run_motors(1, 1, -1, -1, Temps_test);
+void droite(uint32_t time){
+	mecanum_move_pid(V,  -V,  -V,  V, time);
 }
 
-void diagonale_droite(float distance){
-	run_motors(1, 0, 0, -1, Temps_test);
+void gauche(uint32_t time){
+	mecanum_move_pid(-V,  V,  V,  -V, time);
 }
 
-void diagonale_gauche(float distance){
-	run_motors(0, -1, 1, 0, Temps_test);
+void diagonale_droite(uint32_t time){
+	mecanum_move_pid(V,  0,  0,  V, time);
 }
+
+void diagonale_gauche(uint32_t time){
+	mecanum_move_pid(0 ,  V,  V,  0, time);
+}
+
+
+
 
 /*
 void rotation_droite(float angle){
@@ -393,10 +722,17 @@ int main(void)
   __HAL_TIM_MOE_ENABLE(&htim8);
 
   // PIDS init
+
   PID_Vitesse_Init(&pid1, 60000.0, 33000.0, 0.0); // ok
   PID_Vitesse_Init(&pid2, 60000.0, 35000.0, 0.0); // ok
   PID_Vitesse_Init(&pid3, 60000.0, 25000.0, 0.0); // ok
   PID_Vitesse_Init(&pid4, 50000.0, 25000.0, 0.0); // ok
+
+
+  //PID_Vitesse_Init(&pid1, 33.0, 5.0, 5.5);
+  //PID_Vitesse_Init(&pid2, 30.0, 2.0, 5.5);
+  //PID_Vitesse_Init(&pid3, 23.0, 0.0, 5.5);
+  //PID_Vitesse_Init(&pid4, 25.0, 0.0, 5.5);
 
   // Imu i2c
   //safe_delay(1000);
@@ -404,8 +740,16 @@ int main(void)
 
     //safe_delay(1000);
     //test_PID_5s(2.0);
-    safe_delay(1000);
-    test_PID_5s_reculer(2.0);
+    //safe_delay(1000);
+    //test_PID_5s_reculer(2.0);
+
+  	safe_delay(1000);
+  	//mecanum_move_position(1, 1, 1, 0, 0.50);
+  	mecanum_move_position_v2(1, 1, 1, 1, 2);
+  	safe_delay(1000);
+  	mecanum_move_position_v2(-1, -1, -1, -1, 2);
+
+  	//mecanum_move_position(-1, -1, -1, -1, 0.50);
 
 
     //mecanum_move_pid(2.0, 2.0, 2.0, 2.0, 2000);
