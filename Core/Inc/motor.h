@@ -25,14 +25,6 @@ extern "C" {
 
 #define RAYON_ROBOT_M   0.2
 
-// position robot
-typedef struct {
-    float x;
-    float y;
-    float angle;
-} Robot_Pos;
-
-extern Robot_Pos robot_pos;
 
 
 // PID
@@ -41,6 +33,16 @@ typedef struct {
     float integrale;
     float erreur_precedente;
 } PID_Vitesse_t;
+
+// position robot
+typedef struct {
+    float x;
+    float y;
+    float angle;
+} Robot_Pos;
+
+extern Robot_Pos robot_pos;
+extern volatile uint8_t stop_mouvement;
 
 
 extern TIM_HandleTypeDef htim1;
@@ -69,7 +71,7 @@ float calculer_vitesse(int32_t erreur, int32_t cible);
 
 
 void test_PID_5s(float consigne_vitesse);
-void mecanum_move_position(float vHR, float vBR, float vHL, float vBL, float metres);
+void mecanum_move_position(float v1, float v2, float v3, float v4, float metres);
 
 void avancer(float metre);
 void reculer(float metre);
@@ -79,8 +81,10 @@ void diagonale_droite(float metre);
 void diagonale_gauche(float metre);
 void rotation_gauche(float angle);
 void rotation_droite(float angle);
+void arc_de_cercle(float rayon_cm, float angle_deg);
 
 void tourner_vers_angle(float angle_cible);
+void aller_a_coord(float x_cible, float y_cible);
 
 #ifdef __cplusplus
 }

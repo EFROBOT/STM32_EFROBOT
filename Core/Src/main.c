@@ -64,13 +64,15 @@ UART_HandleTypeDef huart2;
 
 uint8_t rx_byte;
 volatile uint8_t commande_recue = 0;
-
+volatile uint8_t stop_mouvement = 0;
 int32_t encoder1, encoder2, encoder3, encoder4;
 
 // coms
 static char uart_buf[UART_BUF_SIZE];
 static uint8_t uart_idx = 0;
 uint32_t lastPosUpdate = 0;
+
+
 
 
 /* USER CODE END PV */
@@ -102,6 +104,21 @@ void safe_delay(uint32_t ms) {
         HAL_Delay(10);
     }
 }
+// Team 0 --> Jaune
+// Team 1 --> Bleu
+void Position_robot_init(Robot_Pos *p, int team) {
+	if (team == 0) {
+		p->x = 16;
+		p->y = 184.0;
+		p->angle = 270;
+	}
+	else if (team == 1) {
+	    p->x = 298;
+	    p->y = 198.6;
+	    p->angle = 270;
+	}
+}
+
 
 // ---------------------------------------------------
 // Coms with raspy
@@ -126,11 +143,17 @@ void traiter_commande(char *cmd) {
 
     if (strncmp(cmd, "AC ", 3) == 0) {
         sscanf(cmd + 3, "%f %f", &param1, &param2);
-        // go_to_coord(param1, param2);  // à implémenter
+        aller_a_coord(param1, param2);
 
     } else if (strncmp(cmd, "TVA ", 4) == 0) {
         param1 = atoff(cmd + 4);
-        tourner_vers_angle(param1);   // à implémenter
+        tourner_vers_angle(param1);
+
+    } else if (strncmp(cmd, "TJ", 2) == 0) {
+        Position_robot_init(&robot_pos, 0);
+
+    } else if (strncmp(cmd, "TB", 2) == 0) {
+        Position_robot_init(&robot_pos, 1);
 
     } else if (strncmp(cmd, "RAH ", 4) == 0) {
         param1 = atoff(cmd + 4);
@@ -138,7 +161,7 @@ void traiter_commande(char *cmd) {
 
     } else if (strncmp(cmd, "RH ", 3) == 0) {
         param1 = atoff(cmd + 3);
-        rotation_gauche(param1);
+        rotation_droite(param1);
 
     } else if (strncmp(cmd, "DG ", 3) == 0) {
         param1 = atoff(cmd + 3);
@@ -181,7 +204,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         if (rx_byte == '\n')
         {
             uart_buf[uart_idx] = '\0';
-            commande_recue = 1;
+            uart_idx = 0;
+
+            // STOP prioritaire — traité directement dans l'interruption
+            if (strncmp((char*)uart_buf, "STOP", 4) == 0) {
+                stop_mouvement = 1;
+                stop_motors();
+            } else {
+                commande_recue = 1;
+            }
         }
         else if (rx_byte != '\r' && uart_idx < UART_BUF_SIZE - 1)
         {
@@ -191,7 +222,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
     }
 }
-
 void uart_poll(void)
 {
     if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_ORE))
@@ -276,10 +306,10 @@ int main(void)
   __HAL_TIM_MOE_ENABLE(&htim8);
 
   // PIDS init
-  PID_Vitesse_Init(&pid1, 60000.0, 33000.0, 0.0); // ok
-  PID_Vitesse_Init(&pid2, 60000.0, 35000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid1, 60000.0, 37000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid2, 60000.0, 28000.0, 0.0); // ok
   PID_Vitesse_Init(&pid3, 60000.0, 25000.0, 0.0); // ok
-  PID_Vitesse_Init(&pid4, 50000.0, 25000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid4, 57000.0, 25000.0, 0.0); // ok
 
   // check pid value
   //safe_delay(1000);
@@ -294,8 +324,24 @@ int main(void)
   //droite(5);
   //safe_delay(500);
   //gauche(5);
+  Position_robot_init(&robot_pos, 0);
+  envoyer_position();
+  //aller_a_coord(20, 145);
+
+  envoyer_position();
+  //aller_a_coord(0, 198);
+  safe_delay(1000);
+  //arc_de_cercle(0.30, 180);
+  envoyer_position();
+  //aller_a_coord(35, 145);
+
+  envoyer_position();
+
+  //safe_delay(5000);
+  //aller_a_coord(10, 80);
 
   HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -303,7 +349,6 @@ int main(void)
   while (1)
   {
 	    HAL_IWDG_Refresh(&hiwdg);
-
 
 	    uart_poll();
 
