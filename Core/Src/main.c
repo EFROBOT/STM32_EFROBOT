@@ -21,12 +21,19 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stdio.h"
-#include "stdlib.h"
+
+// Lib
+#include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <string.h>
+
+// Header
 #include "motor.h"
 #include "imu.h"
+#include "pince.h"
+
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -296,6 +303,7 @@ int main(void)
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
 
+  //-------------------------------------------------------------
   // Timer 1
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1); // motor 1 In1
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2); // motor 1 In2
@@ -320,12 +328,11 @@ int main(void)
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4); // motor 4 In2
   __HAL_TIM_MOE_ENABLE(&htim8);
 
-  // PIDS init
-  PID_Vitesse_Init(&pid1, 60000.0, 37000.0, 0.0); // ok
-  PID_Vitesse_Init(&pid2, 60000.0, 28000.0, 0.0); // ok
-  PID_Vitesse_Init(&pid3, 60000.0, 25000.0, 0.0); // ok
-  PID_Vitesse_Init(&pid4, 57000.0, 25000.0, 0.0); // ok
+  // Timer 16 (Servo)
+  HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
 
+
+  //-------------------------------------------------------------
   // IMU init
   for (uint8_t addr = 1; addr < 128; addr++) {
 	  HAL_IWDG_Refresh(&hiwdg);
@@ -336,37 +343,43 @@ int main(void)
 
   imu_init(&hi2c1, &hiwdg);
 
+  //-------------------------------------------------------------
+  // PIDS init
+  PID_Vitesse_Init(&pid1, 60000.0, 37000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid2, 60000.0, 28000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid3, 60000.0, 25000.0, 0.0); // ok
+  PID_Vitesse_Init(&pid4, 57000.0, 25000.0, 0.0); // ok
 
-  // check pid value
-  //safe_delay(1000);
   //test_PID_5s(2.0);
 
-
-  safe_delay(1000);
-  //rotation_droite(90);
-  safe_delay(500);
-  //avancer(10);
-  //safe_delay(500);
-  //droite(5);
-  //safe_delay(500);
-  //gauche(5);
+  //-------------------------------------------------------------
+  // Robot Position Init
   Position_robot_init(&robot_pos, 0);
-  envoyer_position();
-  //aller_a_coord(20, 145);
 
-  envoyer_position();
-  //aller_a_coord(0, 198);
-  safe_delay(1000);
-  //arc_de_cercle(0.30, 180);
-  envoyer_position();
-  //aller_a_coord(35, 145);
-
-  envoyer_position();
-
-  //safe_delay(5000);
-  //aller_a_coord(10, 80);
-
+  //-------------------------------------------------------------
+  // Uart Init
   HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+
+  //-------------------------------------------------------------
+  // Stepper init
+  activer_stepper(Stepper_lever_pince);
+  activer_stepper(Stepper_rotation_bloc);
+
+
+  //-------------------------------------------------------------
+  // Test Pince
+
+  piston(Ouvert);
+  safe_delay(1000);
+  piston(Ferme);
+
+  nombre_pas_stepper(Stepper_lever_pince, Horraire, 200, 5);
+  safe_delay(1000);
+  nombre_pas_stepper(Stepper_lever_pince, Anti_horraire, 200, 5);
+
+  controle_angle_servo(&htim16, TIM_CHANNEL_1, 90.0);
+  safe_delay(1000);
+  angle_servo(&htim16, TIM_CHANNEL_1, 0.0);
 
   /* USER CODE END 2 */
 
@@ -377,7 +390,6 @@ int main(void)
 	    HAL_IWDG_Refresh(&hiwdg);
 
 	    uart_poll();
-
 
 	    uint32_t now = HAL_GetTick();
 	    if (now - lastPosUpdate >= POS_INTERVAL) {

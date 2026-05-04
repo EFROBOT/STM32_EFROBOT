@@ -1,0 +1,5 @@
+../Core/Src/pince.c:6:6:piston	2
+../Core/Src/pince.c:24:6:activer_stepper	2
+../Core/Src/pince.c:32:6:desactiver_stepper	2
+../Core/Src/pince.c:40:6:nombre_pas_stepper	6
+../Core/Src/pince.c:72:6:controle_angle_servo	8
