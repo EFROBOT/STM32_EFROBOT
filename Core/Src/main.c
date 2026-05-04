@@ -26,6 +26,7 @@
 #include <math.h>
 #include <string.h>
 #include "motor.h"
+#include "imu.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -127,10 +128,21 @@ void Position_robot_init(Robot_Pos *p, int team) {
 
 void envoyer_position(void) {
     char buf[64];
-    int len = snprintf(buf, sizeof(buf), "POS %.3f %.3f %.1f\r\n",
-                       robot_pos.x, robot_pos.y, robot_pos.angle);
+    int16_t heading = imu_get_heading(&hi2c1);
+    int len = snprintf(buf, sizeof(buf), "POS %.3f %.3f %d\r\n",
+                       robot_pos.x, robot_pos.y, heading);
     HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
 }
+
+void envoyer_position_imu(void) {
+	int16_t heading = imu_get_heading(&hi2c1);
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "IMU %d\r\n", heading);
+    HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
+}
+
+
+
 void traiter_commande(char *cmd) {
     // Trim '\r' éventuel
     int len = strlen(cmd);
@@ -314,6 +326,17 @@ int main(void)
   PID_Vitesse_Init(&pid3, 60000.0, 25000.0, 0.0); // ok
   PID_Vitesse_Init(&pid4, 57000.0, 25000.0, 0.0); // ok
 
+  // IMU init
+  for (uint8_t addr = 1; addr < 128; addr++) {
+	  HAL_IWDG_Refresh(&hiwdg);
+      if (HAL_I2C_IsDeviceReady(&hi2c1, addr << 1, 2, 50) == HAL_OK) {
+          printf("Device trouve a 0x%02X\r\n", addr);
+      }
+  }
+
+  imu_init(&hi2c1, &hiwdg);
+
+
   // check pid value
   //safe_delay(1000);
   //test_PID_5s(2.0);
@@ -355,11 +378,14 @@ int main(void)
 
 	    uart_poll();
 
+
 	    uint32_t now = HAL_GetTick();
 	    if (now - lastPosUpdate >= POS_INTERVAL) {
 	        envoyer_position();
+	        //envoyer_position_imu();
 	        lastPosUpdate = now;
 	    }
+
 
 	    HAL_Delay(10);
 
@@ -1021,14 +1047,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, pist_0_Pin|pist_1_Pin|led_Pin|GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, pist_0_Pin|pist_1_Pin|led_Pin|dir1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_13|GPIO_PIN_14
-                          |GPIO_PIN_15, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, step2_Pin|en2_Pin|step1_Pin|en1_Pin
+                          |dir2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -1036,8 +1062,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : pist_0_Pin pist_1_Pin led_Pin PC4 */
-  GPIO_InitStruct.Pin = pist_0_Pin|pist_1_Pin|led_Pin|GPIO_PIN_4;
+  /*Configure GPIO pins : pist_0_Pin pist_1_Pin led_Pin dir1_Pin */
+  GPIO_InitStruct.Pin = pist_0_Pin|pist_1_Pin|led_Pin|dir1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -1056,15 +1082,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB1 PB13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_13;
+  /*Configure GPIO pins : step2_Pin step1_Pin */
+  GPIO_InitStruct.Pin = step2_Pin|step1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB2 PB14 PB15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_14|GPIO_PIN_15;
+  /*Configure GPIO pins : en2_Pin en1_Pin dir2_Pin */
+  GPIO_InitStruct.Pin = en2_Pin|en1_Pin|dir2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
