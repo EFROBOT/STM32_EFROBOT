@@ -62,6 +62,7 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
+TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim8;
 TIM_HandleTypeDef htim16;
 
@@ -100,6 +101,7 @@ static void MX_TIM16_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_IWDG_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -129,15 +131,19 @@ void Position_robot_init(Robot_Pos *p, int team) {
 	}
 }
 
+void set_position(float new_x, float new_y, float new_angle) {
+	robot_pos.x = new_x;
+	robot_pos.y = new_y;
+	robot_pos.angle = new_angle;
+}
 
 // ---------------------------------------------------
 // Coms with raspy
 
 void envoyer_position(void) {
     char buf[64];
-    int16_t heading = imu_get_heading(&hi2c1);
-    int len = snprintf(buf, sizeof(buf), "POS %.3f %.3f %d\r\n",
-                       robot_pos.x, robot_pos.y, heading);
+    int len = snprintf(buf, sizeof(buf), "POS %.3f %.3f %.3f\r\n",
+                       robot_pos.x, robot_pos.y, robot_pos.angle);
     HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
 }
 
@@ -160,11 +166,20 @@ void traiter_commande(char *cmd) {
     int l = snprintf(log, sizeof(log), "[STM32] CMD recue: [%s]\r\n", cmd);
     HAL_UART_Transmit(&huart2, (uint8_t*)log, l, 10);
 
-    float param1 = 0, param2 = 0;
+    float param1 = 0, param2 = 0, param3=0;
+    int param_init;
 
     if (strncmp(cmd, "AC ", 3) == 0) {
         sscanf(cmd + 3, "%f %f", &param1, &param2);
         aller_a_coord(param1, param2);
+
+    } else if (strncmp(cmd, "Recup ", 6) == 0) {
+    	sscanf(cmd + 6, "%d", &param_init); // T ou F
+        Gripper_RetrieveAndGoUnload(param_init);
+
+    } else if (strncmp(cmd, "SP ", 3) == 0) {
+        sscanf(cmd + 3, "%f %f %f", &param1, &param2, &param3);
+        set_position(param1, param2, param3);
 
     } else if (strncmp(cmd, "TVA ", 4) == 0) {
         param1 = atoff(cmd + 4);
@@ -301,6 +316,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_IWDG_Init();
   MX_I2C2_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
   //-------------------------------------------------------------
@@ -334,14 +350,14 @@ int main(void)
 
   //-------------------------------------------------------------
   // IMU init
-  for (uint8_t addr = 1; addr < 128; addr++) {
+  /*for (uint8_t addr = 1; addr < 128; addr++) {
 	  HAL_IWDG_Refresh(&hiwdg);
       if (HAL_I2C_IsDeviceReady(&hi2c1, addr << 1, 2, 50) == HAL_OK) {
           printf("Device trouve a 0x%02X\r\n", addr);
       }
-  }
+  }*/
 
-  imu_init(&hi2c1, &hiwdg);
+  //imu_init(&hi2c1, &hiwdg);
 
   //-------------------------------------------------------------
   // PIDS init
@@ -353,8 +369,6 @@ int main(void)
   //test_PID_5s(2.0);
 
   //-------------------------------------------------------------
-  // Robot Position Init
-  Position_robot_init(&robot_pos, 0);
 
   //-------------------------------------------------------------
   // Uart Init
@@ -362,24 +376,32 @@ int main(void)
 
   //-------------------------------------------------------------
   // Stepper init
-  activer_stepper(Stepper_lever_pince);
-  activer_stepper(Stepper_rotation_bloc);
-
 
   //-------------------------------------------------------------
   // Test Pince
 
-  piston(Ouvert);
-  safe_delay(1000);
-  piston(Ferme);
+  //piston(Ferme);
+  //safe_delay(5000);
+  //piston(Ferme);
+  //safe_delay(2000);
+  //nombre_pas_stepper(Stepper_rotation_bloc, Horraire, 400, 5);
+  //safe_delay(1000);
+  //desactiver_stepper(Stepper_lever_pince);
 
-  nombre_pas_stepper(Stepper_lever_pince, Horraire, 200, 5);
-  safe_delay(1000);
-  nombre_pas_stepper(Stepper_lever_pince, Anti_horraire, 200, 5);
+  //nombre_pas_stepper(Stepper_lever_pince, Anti_horraire, 200, 5);
 
-  controle_angle_servo(&htim16, TIM_CHANNEL_1, 90.0);
+  //controle_angle_servo(&htim16, TIM_CHANNEL_1, 90.0);
+  //controle_angle_servo(&htim16, TIM_CHANNEL_1, 0.0);
+
+
+  // Robot Position Init
+  safe_delay(2000);
+
+  envoyer_position();
+
   safe_delay(1000);
-  angle_servo(&htim16, TIM_CHANNEL_1, 0.0);
+  avancer(2);
+
 
   /* USER CODE END 2 */
 
@@ -397,7 +419,6 @@ int main(void)
 	        //envoyer_position_imu();
 	        lastPosUpdate = now;
 	    }
-
 
 	    HAL_Delay(10);
 
@@ -862,6 +883,44 @@ static void MX_TIM5_Init(void)
 }
 
 /**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 79;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 49;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
   * @brief TIM8 Initialization Function
   * @param None
   * @retval None
@@ -1059,23 +1118,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, pist_0_Pin|pist_1_Pin|led_Pin|dir1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, LED2_Pin|LED1_Pin|led_Pin|M2_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, M1_DIR_Pin|M1_EN_Pin|M2_DIR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, step2_Pin|en2_Pin|step1_Pin|en1_Pin
-                          |dir2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, M2_STEP_Pin|M1_STEP_Pin, GPIO_PIN_SET);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : pist_0_Pin pist_1_Pin led_Pin dir1_Pin */
-  GPIO_InitStruct.Pin = pist_0_Pin|pist_1_Pin|led_Pin|dir1_Pin;
+  /*Configure GPIO pins : LED2_Pin LED1_Pin led_Pin M2_EN_Pin */
+  GPIO_InitStruct.Pin = LED2_Pin|LED1_Pin|led_Pin|M2_EN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -1084,28 +1136,21 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : interrupteur_Pin */
   GPIO_InitStruct.Pin = interrupteur_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(interrupteur_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : M1_DIR_Pin M1_EN_Pin M2_DIR_Pin */
+  GPIO_InitStruct.Pin = M1_DIR_Pin|M1_EN_Pin|M2_DIR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : step2_Pin step1_Pin */
-  GPIO_InitStruct.Pin = step2_Pin|step1_Pin;
+  /*Configure GPIO pins : M2_STEP_Pin M1_STEP_Pin */
+  GPIO_InitStruct.Pin = M2_STEP_Pin|M1_STEP_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : en2_Pin en1_Pin dir2_Pin */
-  GPIO_InitStruct.Pin = en2_Pin|en1_Pin|dir2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */

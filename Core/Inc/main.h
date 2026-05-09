@@ -59,12 +59,10 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define B1_Pin GPIO_PIN_13
-#define B1_GPIO_Port GPIOC
-#define pist_0_Pin GPIO_PIN_0
-#define pist_0_GPIO_Port GPIOC
-#define pist_1_Pin GPIO_PIN_1
-#define pist_1_GPIO_Port GPIOC
+#define LED2_Pin GPIO_PIN_0
+#define LED2_GPIO_Port GPIOC
+#define LED1_Pin GPIO_PIN_1
+#define LED1_GPIO_Port GPIOC
 #define led_Pin GPIO_PIN_2
 #define led_GPIO_Port GPIOC
 #define interrupteur_Pin GPIO_PIN_3
@@ -73,22 +71,20 @@ void Error_Handler(void);
 #define USART_TX_GPIO_Port GPIOA
 #define USART_RX_Pin GPIO_PIN_3
 #define USART_RX_GPIO_Port GPIOA
-#define LD2_Pin GPIO_PIN_5
-#define LD2_GPIO_Port GPIOA
 #define servo_Pin GPIO_PIN_6
 #define servo_GPIO_Port GPIOA
-#define dir1_Pin GPIO_PIN_4
-#define dir1_GPIO_Port GPIOC
-#define step2_Pin GPIO_PIN_1
-#define step2_GPIO_Port GPIOB
-#define en2_Pin GPIO_PIN_2
-#define en2_GPIO_Port GPIOB
-#define step1_Pin GPIO_PIN_13
-#define step1_GPIO_Port GPIOB
-#define en1_Pin GPIO_PIN_14
-#define en1_GPIO_Port GPIOB
-#define dir2_Pin GPIO_PIN_15
-#define dir2_GPIO_Port GPIOB
+#define M2_EN_Pin GPIO_PIN_4
+#define M2_EN_GPIO_Port GPIOC
+#define M1_DIR_Pin GPIO_PIN_1
+#define M1_DIR_GPIO_Port GPIOB
+#define M1_EN_Pin GPIO_PIN_2
+#define M1_EN_GPIO_Port GPIOB
+#define M2_DIR_Pin GPIO_PIN_13
+#define M2_DIR_GPIO_Port GPIOB
+#define M2_STEP_Pin GPIO_PIN_14
+#define M2_STEP_GPIO_Port GPIOB
+#define M1_STEP_Pin GPIO_PIN_15
+#define M1_STEP_GPIO_Port GPIOB
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14

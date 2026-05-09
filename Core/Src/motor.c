@@ -130,11 +130,11 @@ void test_PID_5s(float consigne_vitesse) {
             last_enc3 = enc3; last_enc4 = enc4;
             last_pid_time = current_time;
 
-            char buf[128];
+            /*char buf[128];
             int len = snprintf(buf, sizeof(buf),
                 "V1:%.2f V2:%.2f V3:%.2f V4:%.2f | Enc1:%ld Enc2:%ld Enc3:%ld Enc4:%ld\r\n",
                 v1, v2, v3, v4, enc1, enc2, enc3, enc4);
-            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);
+            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);*/
         }
         HAL_Delay(1);
     }

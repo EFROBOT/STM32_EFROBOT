@@ -3,34 +3,30 @@
 
 #include "main.h"
 
-// piston
 typedef enum {
-    Ferme = 0,
-    Ouvert  = 1
-} Piston;
-
-void piston(Piston state);
-
-//-------------------------------------------------------------
-// Stepper
+  GRIPPER_OPEN = 0,
+  GRIPPER_CLOSED,
+  GRIPPER_HALF_OPEN,
+  GRIPPER_HALF_CLOSED
+} GripperJawState_t;
 
 typedef enum {
-    Stepper_lever_pince = 1,
-	Stepper_rotation_bloc = 2
-} Stepper;
+  POS_GROUND = 0,
+  POS_NAVIGATION,
+  POS_UNLOAD,
+  POS_ROTATE_INTERMEDIATE
+} GripperPosition_t;
 
-typedef enum {
-    Horraire  = 0,
-    Anti_horraire = 1
-} Stepper_dir;
+#define ANGLE_SOL_DEG           0.0f
+#define ANGLE_NAV_DEG           136.0f
+#define ANGLE_INTERMEDIATE_DEG  45.0f
+#define ANGLE_UNLOAD_DEG        166.0f
+#define M2_ROTATION_DEG         150.0f
 
-void activer_stepper (Stepper x);
-void desactiver_stepper (Stepper x);
-void nombre_pas_stepper (Stepper x, Stepper_dir dir, uint32_t steps, uint32_t delay_us);
+void Pince_Init(void);
+void Pince_UpdateSchedulerTick(void);
+void Pince_HandleCommand(const char *line);
+void Pince_PrintStatus(void);
 
-//-------------------------------------------------------------
-//servo
+#endif
 
-void controle_angle_servo(TIM_HandleTypeDef *htim, uint32_t channel, float angle);
-
-#endif /* PINCE_H */
