@@ -1,62 +1,11 @@
 #include "pince.h"
 
 #include <math.h>
-#include <stdio.h>
-#include <string.h>
 
-extern UART_HandleTypeDef huart2;
 
-typedef struct {
-  GPIO_TypeDef *step_port;
-  uint16_t step_pin;
-  GPIO_TypeDef *dir_port;
-  uint16_t dir_pin;
-  GPIO_TypeDef *en_port;
-  uint16_t en_pin;
-  uint8_t enabled, busy, direction_cw;
-  uint32_t total_steps, steps_done, phase_accel_end, phase_decel_start;
-  float v_min_sps, v_max_sps, accel_sps2, current_sps, tick_accum;
-  uint8_t step_high_ticks;
-} StepperMotor_t;
-
-typedef struct {
-  GripperJawState_t jaw_state;
-  GripperPosition_t position;
-  uint8_t has_object;
-  uint8_t m2_lock_with_object;
-  float m1_angle_deg;
-} GripperState_t;
-
-#define SCHEDULER_TICK_US 50.0f
-#define STEP_PULSE_HIGH_TICKS 1U
-#define MOTOR_FULL_STEPS_PER_REV 200.0f
-#define DRIVER_MICROSTEPS 16.0f
-#define STEPS_PER_REV (MOTOR_FULL_STEPS_PER_REV * DRIVER_MICROSTEPS)
-#define MIN_STEP_RATE_SPS 120.0f
-#define MAX_STEP_RATE_SPS 1200.0f
-#define DEFAULT_ACCEL_SPS2 1800.0f
-#define M1_MAX_STEP_RATE_SPS 267.0f
-#define M1_ACCEL_SPS2 400.0f
-#define ACTION_TIMEOUT_MS 20000U
-#define JAW_FULL_OPEN_MS 1000U
-#define JAW_FULL_CLOSE_MS 1250U
-#define JAW_HALF_OPEN_MS 375U
-#define JAW_HALF_CLOSE_MS 500U
-#define JAW_REGRIP_DELAY_MS 1000U
-#define ROUTINE_RELEASE_DELAY_MS 2000U
-
-static StepperMotor_t motors[2];
-static GripperState_t gripper;
-static char uart_tx_buf[96];
-static const float M1_GEAR_RATIO = 3.0f;
-static const float M2_GEAR_RATIO = 1.6666667f;
 
 static void Gripper_UpdateHoldPolicy(void);
 
-static void Uart_Send(const char *msg) {
-  HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg),
-                    HAL_MAX_DELAY);
-}
 static void Motor_SetEnable(uint8_t motor_id, uint8_t enable) {
   if (motor_id > 1U)
     return;
@@ -132,20 +81,18 @@ static void Gripper_UpdateHoldPolicy(void) {
   if (!motors[1].busy)
     Motor_SetEnable(1U, m2_should_hold);
 }
+
 static uint8_t Motor_WaitIdle(uint8_t motor_id, uint32_t timeout_ms) {
-  uint32_t t0 = HAL_GetTick();
-  if (motor_id > 1U)
-    return 0U;
-  while (motors[motor_id].busy) {
-    if ((HAL_GetTick() - t0) > timeout_ms) {
-      (void)snprintf(uart_tx_buf, sizeof(uart_tx_buf), "TIMEOUT M%u\r\n",
-                     (unsigned)(motor_id + 1U));
-      Uart_Send(uart_tx_buf);
-      return 0U;
+    uint32_t t0 = HAL_GetTick();
+    if (motor_id > 1U) return 0U;
+    while (motors[motor_id].busy) {
+        Motor_Update(&motors[motor_id]);  // ← avance le moteur
+        HAL_IWDG_Refresh(&hiwdg);        // ← nourrit le chien
+        if ((HAL_GetTick() - t0) > timeout_ms) return 0U;
     }
-  }
-  return 1U;
+    return 1U;
 }
+
 static uint8_t Motor_MoveOutputAngle(uint8_t motor_id, float output_angle_deg,
                                      uint8_t cw) {
   float motor_angle = fabsf(output_angle_deg) *
@@ -173,14 +120,14 @@ static void Gripper_ActuateJaw(GripperJawState_t target) {
     break;
   case GRIPPER_HALF_OPEN:
     HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_SET);
     HAL_Delay(JAW_HALF_OPEN_MS);
     HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
     break;
   case GRIPPER_HALF_CLOSED:
     HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
     HAL_Delay(JAW_HALF_CLOSE_MS);
     HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
@@ -198,7 +145,6 @@ static void Gripper_RecalibrateZeroAtGround(void) {
   if ((gripper.position == POS_GROUND) &&
       (gripper.jaw_state == GRIPPER_CLOSED)) {
     gripper.m1_angle_deg = 0.0f;
-    Uart_Send("M1 zero recalibrated\r\n");
   }
 }
 static uint8_t Gripper_MoveTo(GripperPosition_t target) {
@@ -259,110 +205,8 @@ static uint8_t Gripper_RetrieveAndGoUnload(uint8_t do_rotate) {
   Gripper_UpdateHoldPolicy();
   return 1U;
 }
-static uint8_t Gripper_Unload(void) {
-  if (!Gripper_MoveTo(POS_UNLOAD))
-    return 0U;
-  Gripper_ActuateJaw(GRIPPER_HALF_OPEN);
-  HAL_Delay(JAW_REGRIP_DELAY_MS);
-  Gripper_ActuateJaw(GRIPPER_HALF_CLOSED);
-  Gripper_ActuateJaw(GRIPPER_CLOSED);
-  gripper.has_object = 0U;
-  gripper.m2_lock_with_object = 0U;
-  Gripper_UpdateHoldPolicy();
-  return 1U;
-}
-
-void Pince_PrintStatus(void) {
-  const char *pos = (gripper.position == POS_GROUND)
-                        ? "SOL"
-                        : (gripper.position == POS_NAVIGATION ? "NAV" : "DECH");
-  const char *jaw =
-      (gripper.jaw_state == GRIPPER_OPEN)
-          ? "OPEN"
-          : (gripper.jaw_state == GRIPPER_CLOSED
-                 ? "CLOSED"
-                 : (gripper.jaw_state == GRIPPER_HALF_OPEN ? "HALF_OPEN"
-                                                           : "HALF_CLOSE"));
-  (void)snprintf(uart_tx_buf, sizeof(uart_tx_buf),
-                 "STATE pos=%s jaw=%s obj=%u m1_en=%u m2_en=%u\r\n", pos, jaw,
-                 (unsigned)gripper.has_object, (unsigned)motors[0].enabled,
-                 (unsigned)motors[1].enabled);
-  Uart_Send(uart_tx_buf);
-}
-
-void Pince_HandleCommand(const char *line) {
-  char motor[4] = {0}, dir[4] = {0};
-  float angle = 0.0f;
-  if (!strcmp(line, "S") || !strcmp(line, "s")) {
-    (void)Gripper_MoveTo(POS_GROUND);
-    Pince_PrintStatus();
-    return;
-  }
-  if (!strcmp(line, "N") || !strcmp(line, "n")) {
-    (void)Gripper_MoveTo(POS_NAVIGATION);
-    Pince_PrintStatus();
-    return;
-  }
-  if (!strcmp(line, "D") || !strcmp(line, "d")) {
-    (void)Gripper_MoveTo(POS_UNLOAD);
-    Pince_PrintStatus();
-    return;
-  }
-  if (!strcmp(line, "O") || !strcmp(line, "o")) {
-    if (gripper.position == POS_GROUND) {
-      Gripper_ActuateJaw(GRIPPER_OPEN);
-      Gripper_UpdateHoldPolicy();
-    } else
-      Uart_Send("REFUSED: open only at ground\r\n");
-    Pince_PrintStatus();
-    return;
-  }
-  if (!strcmp(line, "F") || !strcmp(line, "f")) {
-    Gripper_ActuateJaw(GRIPPER_CLOSED);
-    if (gripper.position == POS_GROUND) {
-      Gripper_RecalibrateZeroAtGround();
-      Gripper_UpdateHoldPolicy();
-    }
-    Pince_PrintStatus();
-    return;
-  }
-  if (!strcmp(line, "C") || !strcmp(line, "c")) {
-    if (gripper.position == POS_UNLOAD) {
-      (void)Gripper_Unload();
-    } else
-      Uart_Send("REFUSED: half-open only at unload\r\n");
-    Pince_PrintStatus();
-    return;
-  }
-  if (!strcmp(line, "R0") || !strcmp(line, "r0")) {
-    (void)Gripper_RetrieveAndGoUnload(0U);
-    Pince_PrintStatus();
-    return;
-  }
-  if (!strcmp(line, "R1") || !strcmp(line, "r1")) {
-    (void)Gripper_RetrieveAndGoUnload(1U);
-    Pince_PrintStatus();
-    return;
-  }
-  if (sscanf(line, "%3s %f %3s", motor, &angle, dir) == 3) {
-    uint8_t mid = 0xFFU, cw = 1U;
-    if (!strcmp(motor, "M1"))
-      mid = 0U;
-    else if (!strcmp(motor, "M2"))
-      mid = 1U;
-    if (!strcmp(dir, "CW") || !strcmp(dir, "cw"))
-      cw = 1U;
-    else if (!strcmp(dir, "CCW") || !strcmp(dir, "ccw"))
-      cw = 0U;
-    else
-      mid = 0xFFU;
-    if (mid <= 1U) {
-      Motor_StartMoveAngle(mid, angle, cw);
-      (void)Motor_WaitIdle(mid, ACTION_TIMEOUT_MS);
-      return;
-    }
-  }
-  Uart_Send("ERR\r\n");
+uint8_t Pince_RecupererEtStocker(uint8_t rotation_active) {
+  return Gripper_RetrieveAndGoUnload(rotation_active ? 1U : 0U);
 }
 
 void Pince_UpdateSchedulerTick(void) {
@@ -390,7 +234,6 @@ void Pince_Init(void) {
   gripper.m2_lock_with_object = 0U;
   gripper.m1_angle_deg = 0.0f;
   Gripper_ActuateJaw(GRIPPER_CLOSED);
-  Uart_Send("Fermeture de la pince \r\n");
   motors[0].v_max_sps = M1_MAX_STEP_RATE_SPS;
   motors[0].accel_sps2 = M1_ACCEL_SPS2;
   Gripper_UpdateHoldPolicy();

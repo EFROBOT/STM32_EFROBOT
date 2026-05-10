@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+void safe_delay(uint32_t ms);
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

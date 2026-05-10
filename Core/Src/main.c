@@ -32,7 +32,7 @@
 #include "motor.h"
 #include "imu.h"
 #include "pince.h"
-
+#include "servo.h"
 
 /* USER CODE END Includes */
 
@@ -119,45 +119,60 @@ void safe_delay(uint32_t ms) {
 // Team 0 --> Jaune
 // Team 1 --> Bleu
 void Position_robot_init(Robot_Pos *p, int team) {
-	if (team == 0) {
-		p->x = 16;
-		p->y = 184.0;
-		p->angle = 270;
-	}
-	else if (team == 1) {
-	    p->x = 298;
-	    p->y = 198.6;
-	    p->angle = 270;
-	}
-}
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "[DBG] Position_robot_init team=%d\r\n", team);
+    HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);  // ← trace qui appelle ça
 
+    if (team == 0) {
+        p->x = 16;
+        p->y = 184.0;
+        p->angle = 270;
+    } else if (team == 1) {
+        p->x = 284;
+        p->y = 184;
+        p->angle = 270;
+    }
+}
 void set_position(float new_x, float new_y, float new_angle) {
 	robot_pos.x = new_x;
 	robot_pos.y = new_y;
 	robot_pos.angle = new_angle;
 }
 
+
 // ---------------------------------------------------
 // Coms with raspy
 
 void envoyer_position(void) {
     char buf[64];
-    int len = snprintf(buf, sizeof(buf), "POS %.3f %.3f %.3f\r\n",
-                       robot_pos.x, robot_pos.y, robot_pos.angle);
+    int16_t heading = imu_get_heading(&hi2c1);
+    int len = snprintf(buf, sizeof(buf), "POS %.3f %.3f %d\r\n",
+                       robot_pos.x, robot_pos.y, heading);
     HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
 }
 
-void envoyer_position_imu(void) {
-	int16_t heading = imu_get_heading(&hi2c1);
+void mouvement_termine(void) {
     char buf[64];
-    int len = snprintf(buf, sizeof(buf), "IMU %d\r\n", heading);
+    int len = snprintf(buf, sizeof(buf), "Mouv Ok\r\n");
     HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
 }
 
+void mouvement_pince_termine(void) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "Mouv Pince Ok\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
+}
+
+void mouvement_depot_termine(void) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "Mouv Ramassage Ok\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
+}
 
 
 void traiter_commande(char *cmd) {
     // Trim '\r' éventuel
+	stop_mouvement = 0;
     int len = strlen(cmd);
     while (len > 0 && (cmd[len-1] == '\r' || cmd[len-1] == '\n' || cmd[len-1] == ' '))
         cmd[--len] = '\0';
@@ -166,68 +181,93 @@ void traiter_commande(char *cmd) {
     int l = snprintf(log, sizeof(log), "[STM32] CMD recue: [%s]\r\n", cmd);
     HAL_UART_Transmit(&huart2, (uint8_t*)log, l, 10);
 
-    float param1 = 0, param2 = 0, param3=0;
-    int param_init;
+    float param1 = 0, param2 = 0;
+    int recup = 0;
 
     if (strncmp(cmd, "AC ", 3) == 0) {
         sscanf(cmd + 3, "%f %f", &param1, &param2);
         aller_a_coord(param1, param2);
-
-    } else if (strncmp(cmd, "Recup ", 6) == 0) {
-    	sscanf(cmd + 6, "%d", &param_init); // T ou F
-        Gripper_RetrieveAndGoUnload(param_init);
-
-    } else if (strncmp(cmd, "SP ", 3) == 0) {
-        sscanf(cmd + 3, "%f %f %f", &param1, &param2, &param3);
-        set_position(param1, param2, param3);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "TVA ", 4) == 0) {
         param1 = atoff(cmd + 4);
         tourner_vers_angle(param1);
+        mouvement_termine();
 
+    //------------------------------------------------
+    // Team option
     } else if (strncmp(cmd, "TJ", 2) == 0) {
         Position_robot_init(&robot_pos, 0);
 
     } else if (strncmp(cmd, "TB", 2) == 0) {
         Position_robot_init(&robot_pos, 1);
 
+	//-----------------------------------------------------
+	// Pince Option
+    } else if (strncmp(cmd, "Recuperer caisse ", 17) == 0) {
+    	sscanf(cmd + 17, "%d", &recup);
+    	Pince_RecupererEtStocker(recup);
+    	mouvement_pince_termine();
+
+    } else if (strncmp(cmd, "Pince Navigation", 16) == 0) {
+    	lacher_caisses();
+
+    //-----------------------------------------------------
+    // Servo option
+    } else if (strncmp(cmd, "Securiser caisses", 16) == 0) {
+    	securiser_caisses();
+
+    } else if (strncmp(cmd, "Lacher caisses", 14) == 0) {
+    	lacher_caisses();
+    	mouvement_depot_termine(); // On peut resecuriser les caisses
+
+    //-----------------------------------------------------
+
     } else if (strncmp(cmd, "RAH ", 4) == 0) {
         param1 = atoff(cmd + 4);
         rotation_gauche(param1);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "RH ", 3) == 0) {
         param1 = atoff(cmd + 3);
         rotation_droite(param1);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "DG ", 3) == 0) {
         param1 = atoff(cmd + 3);
         param1 = param1 / 100.0;
         diagonale_gauche(param1);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "DD ", 3) == 0) {
         param1 = atoff(cmd + 3);
         param1 = param1 / 100.0;
         diagonale_droite(param1);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "A ", 2) == 0) {
         param1 = atoff(cmd + 2);
         param1 = param1 / 100.0;
         avancer(param1);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "R ", 2) == 0) {
         param1 = atoff(cmd + 2);
         param1 = param1 / 100.0;
         reculer(param1);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "D ", 2) == 0) {
         param1 = atoff(cmd + 2);
         param1 = param1 / 100.0;
         droite(param1);
+        mouvement_termine();
 
     } else if (strncmp(cmd, "G ", 2) == 0) {
         param1 = atoff(cmd + 2);
         param1 = param1 / 100.0;
         gauche(param1);
+        mouvement_termine();
     }
 
     envoyer_position();
@@ -336,8 +376,8 @@ int main(void)
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_ALL);
 
   // Timer 8
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1); // motor 3 In1
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2); // motor 3 In2
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1); // motor 3 In1 --> In2
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2); // motor 3 In2 --> in2
   __HAL_TIM_MOE_ENABLE(&htim8);
 
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3); // motor 4 In1
@@ -349,18 +389,13 @@ int main(void)
 
 
   //-------------------------------------------------------------
-  // IMU init
-  /*for (uint8_t addr = 1; addr < 128; addr++) {
-	  HAL_IWDG_Refresh(&hiwdg);
-      if (HAL_I2C_IsDeviceReady(&hi2c1, addr << 1, 2, 50) == HAL_OK) {
-          printf("Device trouve a 0x%02X\r\n", addr);
-      }
-  }*/
+  Pince_Init();
+  HAL_TIM_Base_Start_IT(&htim6);
 
-  //imu_init(&hi2c1, &hiwdg);
 
   //-------------------------------------------------------------
   // PIDS init
+
   PID_Vitesse_Init(&pid1, 60000.0, 37000.0, 0.0); // ok
   PID_Vitesse_Init(&pid2, 60000.0, 28000.0, 0.0); // ok
   PID_Vitesse_Init(&pid3, 60000.0, 25000.0, 0.0); // ok
@@ -369,39 +404,45 @@ int main(void)
   //test_PID_5s(2.0);
 
   //-------------------------------------------------------------
+  // Robot Position Init
+  Position_robot_init(&robot_pos, 0);
 
   //-------------------------------------------------------------
   // Uart Init
   HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
 
-  //-------------------------------------------------------------
-  // Stepper init
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) {
+      __HAL_RCC_CLEAR_RESET_FLAGS();
+      char msg[] = "[DBG] REBOOT PAR WATCHDOG\r\n";
+      HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg)-1, 100);
+  }
 
   //-------------------------------------------------------------
+  // IMU init
+
+  // Debug IMU addr
+  char buf[128];
+  for (uint8_t addr = 1; addr < 128; addr++) {
+	  HAL_IWDG_Refresh(&hiwdg);
+      if (HAL_I2C_IsDeviceReady(&hi2c1, addr << 1, 2, 50) == HAL_OK) {
+    	  int len = snprintf(buf, sizeof(buf),
+    			  "Device trouve a 0x%02X\r\n", addr);
+    	  HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);
+      }
+  }
+
+  // Init imu
+  imu_init(&hi2c1, &hiwdg);
+
+  //-------------------------------------------------------------
+  // Pince
+
   // Test Pince
+  Servo_SetAngle(90);
 
-  //piston(Ferme);
-  //safe_delay(5000);
-  //piston(Ferme);
-  //safe_delay(2000);
-  //nombre_pas_stepper(Stepper_rotation_bloc, Horraire, 400, 5);
-  //safe_delay(1000);
-  //desactiver_stepper(Stepper_lever_pince);
-
-  //nombre_pas_stepper(Stepper_lever_pince, Anti_horraire, 200, 5);
-
-  //controle_angle_servo(&htim16, TIM_CHANNEL_1, 90.0);
-  //controle_angle_servo(&htim16, TIM_CHANNEL_1, 0.0);
-
-
-  // Robot Position Init
-  safe_delay(2000);
-
-  envoyer_position();
 
   safe_delay(1000);
-  avancer(2);
-
+  lacher_caisses();
 
   /* USER CODE END 2 */
 
@@ -591,7 +632,7 @@ static void MX_IWDG_Init(void)
 
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
   hiwdg.Init.Window = 4095;
   hiwdg.Init.Reload = 4095;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
@@ -1021,9 +1062,9 @@ static void MX_TIM16_Init(void)
 
   /* USER CODE END TIM16_Init 1 */
   htim16.Instance = TIM16;
-  htim16.Init.Prescaler = 0;
+  htim16.Init.Prescaler = 79;
   htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim16.Init.Period = 65535;
+  htim16.Init.Period = 19999;
   htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim16.Init.RepetitionCounter = 0;
   htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;

@@ -121,10 +121,10 @@ void test_PID_5s(float consigne_vitesse) {
             float cmd3 = calculer_commande_PID(&pid3, consigne_vitesse, v3, dt);
             float cmd4 = calculer_commande_PID(&pid4, consigne_vitesse, v4, dt);
 
-            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
-            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
-            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
-            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1); // motor 4
+            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2); // motor 3
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3); // motor 1
+            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4); // motor 2
 
             last_enc1 = enc1; last_enc2 = enc2;
             last_enc3 = enc3; last_enc4 = enc4;
@@ -261,10 +261,10 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             float cmd3 = calculer_commande_PID(&pid3, vc3, v3, dt);
             float cmd4 = calculer_commande_PID(&pid4, vc4, v4, dt);
 
-            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
-            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
-            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
-            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1); // motor 4
+            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2); // motor 3
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3); // motor 1
+            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4); // motor 2
 
             last_enc1 = enc1; last_enc2 = enc2;
             last_enc3 = enc3; last_enc4 = enc4;

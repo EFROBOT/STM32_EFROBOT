@@ -1,0 +1,3 @@
+../Core/Src/servo.c:11:6:Servo_SetAngle	3
+../Core/Src/servo.c:22:6:securiser_caisses	1
+../Core/Src/servo.c:28:6:lacher_caisses	1
