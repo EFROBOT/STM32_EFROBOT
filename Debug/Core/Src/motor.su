@@ -3,7 +3,7 @@
 ../Core/Src/motor.c:32:6:set_motor_pwm	32	static
 ../Core/Src/motor.c:60:6:PID_Vitesse_Init	24	static
 ../Core/Src/motor.c:68:7:calculer_commande_PID	32	static
-../Core/Src/motor.c:81:6:test_PID_5s	120	static
+../Core/Src/motor.c:81:6:test_PID_5s	320	static
 ../Core/Src/motor.c:148:7:calculer_vitesse	24	static
 ../Core/Src/motor.c:173:6:move	432	static
 ../Core/Src/motor.c:296:6:avancer	16	static

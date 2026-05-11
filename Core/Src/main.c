@@ -389,7 +389,7 @@ int main(void)
 
 
   //-------------------------------------------------------------
-  Pince_Init();
+  //Pince_Init();
   HAL_TIM_Base_Start_IT(&htim6);
 
 
@@ -438,11 +438,19 @@ int main(void)
   // Pince
 
   // Test Pince
-  Servo_SetAngle(90);
+  //Servo_SetAngle(5);
+  //safe_delay(2000);
 
+  //Servo_SetAngle(100);
+
+  //safe_delay(1000);
+  //test_PID_5s(2.0);
 
   safe_delay(1000);
-  lacher_caisses();
+  avancer(2);
+  safe_delay(1000);
+
+  //lacher_caisses();
 
   /* USER CODE END 2 */
 
@@ -456,7 +464,7 @@ int main(void)
 
 	    uint32_t now = HAL_GetTick();
 	    if (now - lastPosUpdate >= POS_INTERVAL) {
-	        envoyer_position();
+	        //envoyer_position();
 	        //envoyer_position_imu();
 	        lastPosUpdate = now;
 	    }
@@ -1159,7 +1167,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, LED2_Pin|LED1_Pin|led_Pin|M2_EN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, VERRIN_0_Pin|VERRIN_1_Pin|led_Pin|M2_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, M1_DIR_Pin|M1_EN_Pin|M2_DIR_Pin, GPIO_PIN_RESET);
@@ -1167,8 +1175,8 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, M2_STEP_Pin|M1_STEP_Pin, GPIO_PIN_SET);
 
-  /*Configure GPIO pins : LED2_Pin LED1_Pin led_Pin M2_EN_Pin */
-  GPIO_InitStruct.Pin = LED2_Pin|LED1_Pin|led_Pin|M2_EN_Pin;
+  /*Configure GPIO pins : VERRIN_0_Pin VERRIN_1_Pin led_Pin M2_EN_Pin */
+  GPIO_InitStruct.Pin = VERRIN_0_Pin|VERRIN_1_Pin|led_Pin|M2_EN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
