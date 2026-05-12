@@ -180,14 +180,14 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
     pid4.integrale = 0; pid4.erreur_precedente = 0;
 
     __HAL_TIM_SET_COUNTER(&htim2, 0);
-    __HAL_TIM_SET_COUNTER(&htim5, 0);
     __HAL_TIM_SET_COUNTER(&htim3, 0);
     __HAL_TIM_SET_COUNTER(&htim4, 0);
+    __HAL_TIM_SET_COUNTER(&htim5, 0);
 
     int32_t last_enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
-    int32_t last_enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
-    int32_t last_enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
-    int32_t last_enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+    int32_t last_enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+    int32_t last_enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+    int32_t last_enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
 
     int32_t pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     uint32_t last_time = HAL_GetTick();
@@ -215,14 +215,14 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             float dt = delta_ms / 1000.0f;
 
             int32_t enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
-            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
-            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
-            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
 
-            int32_t d1 = -(enc1 - last_enc1);
-            int32_t d2 = -(enc2 - last_enc2);
-            int32_t d3 = -(enc3 - last_enc3);
-            int32_t d4 =  (enc4 - last_enc4);
+            int32_t d1 = (enc1 - last_enc1);
+            int32_t d2 = (enc2 - last_enc2);
+            int32_t d3 = (enc3 - last_enc3);
+            int32_t d4 = (enc4 - last_enc4);
 
             if (d1 >  32767) d1 -= 65536; if (d1 < -32768) d1 += 65536;
             if (d2 >  32767) d2 -= 65536; if (d2 < -32768) d2 += 65536;
@@ -263,7 +263,7 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
 
             set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1); // motor
             set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2); // motor
-            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, -cmd3); // motor
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3); // motor
             set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4); // motor
 
             last_enc1 = enc1; last_enc2 = enc2;

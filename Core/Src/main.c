@@ -32,7 +32,6 @@
 #include "motor.h"
 #include "imu.h"
 #include "pince.h"
-#include "servo.h"
 
 /* USER CODE END Includes */
 
@@ -163,13 +162,6 @@ void mouvement_pince_termine(void) {
     HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
 }
 
-void mouvement_depot_termine(void) {
-    char buf[64];
-    int len = snprintf(buf, sizeof(buf), "Mouv Ramassage Ok\r\n");
-    HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
-}
-
-
 void traiter_commande(char *cmd) {
     // Trim '\r' éventuel
 	stop_mouvement = 0;
@@ -210,18 +202,10 @@ void traiter_commande(char *cmd) {
     	mouvement_pince_termine();
 
     } else if (strncmp(cmd, "Pince Navigation", 16) == 0) {
-    	lacher_caisses();
+    	Pince_GoToNav();
 
-    //-----------------------------------------------------
-    // Servo option
-    } else if (strncmp(cmd, "Securiser caisses", 16) == 0) {
-    	securiser_caisses();
-
-    } else if (strncmp(cmd, "Lacher caisses", 14) == 0) {
-    	lacher_caisses();
-    	mouvement_depot_termine(); // On peut resecuriser les caisses
-
-    //-----------------------------------------------------
+    } else if (strncmp(cmd, "Pince Homologation", 18) == 0) {
+    	Pince_Pos_Homolog();
 
     } else if (strncmp(cmd, "RAH ", 4) == 0) {
         param1 = atoff(cmd + 4);
@@ -385,7 +369,7 @@ int main(void)
   __HAL_TIM_MOE_ENABLE(&htim8);
 
   // Timer 16 (Servo)
-  HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
+  //HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
 
 
   //-------------------------------------------------------------
