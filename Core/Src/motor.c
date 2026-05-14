@@ -54,6 +54,7 @@ void set_motor_pwm(TIM_HandleTypeDef *htim, uint32_t canal_0,
         __HAL_TIM_SET_COMPARE(htim, canal_1, 0);
     }
 }
+
 // --------------------------------------------------------------------------------------
 
 // PID
@@ -132,7 +133,7 @@ void test_PID_5s(float consigne_vitesse) {
 
             char buf[128];
             int len = snprintf(buf, sizeof(buf),
-                "V1:%.2f V2:%.2f V3:%.2f V4:%.2f | Enc1:%ld Enc2:%ld Enc3:%ld Enc4:%ld\r\n",
+                "V1:%.2f V2:%.2f V3:%.2f V4:%.2f | Enc1:%ld Enc2:%ld Enc3:%ld Enc4:%ld \r\n",
                 v1, v2, v3, v4, enc1, enc2, enc3, enc4);
             HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);
         }
@@ -265,6 +266,22 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             float cmd3 = calculer_commande_PID(&pid3, vc3, v3, dt);
             float cmd4 = calculer_commande_PID(&pid4, vc4, v4, dt);
 
+            if (vc1 == 0.0f) { pid1.integrale = 0; pid1.erreur_precedente = 0; }
+            if (vc2 == 0.0f) { pid2.integrale = 0; pid2.erreur_precedente = 0; }
+            if (vc3 == 0.0f) { pid3.integrale = 0; pid3.erreur_precedente = 0; }
+            if (vc4 == 0.0f) { pid4.integrale = 0; pid4.erreur_precedente = 0; }
+
+            if (vinit1 > 0 && cmd1 < 0) cmd1 = 0;
+            if (vinit2 > 0 && cmd2 < 0) cmd2 = 0;
+            if (vinit3 > 0 && cmd3 < 0) cmd3 = 0;
+            if (vinit4 > 0 && cmd4 < 0) cmd4 = 0;
+
+            if (vinit1 < 0 && cmd1 > 0) cmd1 = 0;
+            if (vinit2 < 0 && cmd2 > 0) cmd2 = 0;
+            if (vinit3 < 0 && cmd3 > 0) cmd3 = 0;
+            if (vinit4 < 0 && cmd4 > 0) cmd4 = 0;
+
+
             set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
             set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
             set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
@@ -275,8 +292,8 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             last_time = now;
 
             char buf[200];
-            int len = snprintf(buf, sizeof(buf), "cmd1:%.0f cmd2:%.0f cmd3:%.0f cmd4:%.0f enc1:%f enc2:%f enc3:%f enc4:%f\r\n",
-                     cmd1, cmd2, cmd3, cmd4, enc1, enc2, enc3, enc4);
+            int len = snprintf(buf, sizeof(buf), "enc1:%ld enc2:%ld enc3:%ld enc4:%ld\r\n",
+                      enc1, enc2, enc3, enc4);
             HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);
 
             // Conditions d'arret (soit on est sous le seuil; soit le robot accelere aprés etre passé juste à cote du seuil

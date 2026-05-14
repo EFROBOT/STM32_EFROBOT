@@ -360,8 +360,8 @@ int main(void)
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_ALL);
 
   // Timer 8
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1); // motor 3 In1 --> In2
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2); // motor 3 In2 --> in2
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1); // motor 3 In1
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2); // motor 3 In2
   __HAL_TIM_MOE_ENABLE(&htim8);
 
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3); // motor 4 In1
@@ -439,8 +439,37 @@ int main(void)
 
   safe_delay(1000);
   gauche(1);*/
-  safe_delay(1000);
-  reculer(0.3);
+
+  //set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, 50000); --> avance
+  //set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, -50000); --> ne bouge pas
+  //set_motor_pwm(&htim1, TIM_CHANNEL_2, TIM_CHANNEL_1, 50000); --> ne bouge pas
+  //set_motor_pwm(&htim1, TIM_CHANNEL_2, TIM_CHANNEL_1, -50000); --> recule
+
+
+
+
+  /*set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, 50000);
+  set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, 50000);
+  set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, 50000);
+  set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, 50000);
+
+  safe_delay(5000);
+  stop_motors();
+
+  set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, -50000);
+  set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, -50000);
+  set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, -50000);
+  set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, -50000);*/
+
+
+  //safe_delay(1000);
+  //avancer(1);
+  //safe_delay(1000);
+  //reculer(1);
+  //safe_delay(1000);
+
+
+  //reculer(0.3);
 
   //envoyer_position();
   //safe_delay(1000);
@@ -461,7 +490,7 @@ int main(void)
 
 	    uint32_t now = HAL_GetTick();
 	    if (now - lastPosUpdate >= POS_INTERVAL) {
-	        //envoyer_position();
+	        envoyer_position();
 	        //envoyer_position_imu();
 	        lastPosUpdate = now;
 	    }
