@@ -18,16 +18,21 @@ typedef enum {
 } GripperPosition_t;
 
 #define ANGLE_SOL_DEG           0.0f
-#define ANGLE_NAV_DEG           90.0f
-#define ANGLE_INTERMEDIATE_DEG  45.0f
-#define ANGLE_UNLOAD_DEG        120.0f
+#define ANGLE_NAV_DEG           136.0f
+#define ANGLE_ROTATION_DEG      0.0f
+#define ANGLE_HOMOLOGATION_DEG  45.0f
+#define ANGLE_UNLOAD_DEG        166.0f
 
 #define M2_ROTATION_DEG         180.0f
+#define M2_ALIGNEMENT_DEG       60.0f
 
 void Pince_Init(void);
 void Pince_UpdateSchedulerTick(void);
 uint8_t Pince_RecupererEtStocker(uint8_t rotation_active);
 uint8_t Pince_GoToNav(void);
 uint8_t Pince_Pos_Homolog(void);
+
+extern IWDG_HandleTypeDef hiwdg;
+
 
 #endif

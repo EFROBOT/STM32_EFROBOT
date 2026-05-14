@@ -420,19 +420,32 @@ int main(void)
 
   //-------------------------------------------------------------
   // Pince
+  //Pince_GoToNav();
 
   // Test Pince
   //Servo_SetAngle(5);
   //safe_delay(2000);
-
   //Servo_SetAngle(100);
 
   //safe_delay(1000);
-  //test_PID_5s(2.0);
+  //avancer(1);
+
+  /*
+   safe_delay(1000);
+  reculer(1);
 
   safe_delay(1000);
-  avancer(2);
+  droite(1);
+
   safe_delay(1000);
+  gauche(1);*/
+  safe_delay(1000);
+  reculer(0.3);
+
+  //envoyer_position();
+  //safe_delay(1000);
+
+
 
   //lacher_caisses();
 
@@ -624,7 +637,7 @@ static void MX_IWDG_Init(void)
 
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
   hiwdg.Init.Window = 4095;
   hiwdg.Init.Reload = 4095;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)

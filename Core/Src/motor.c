@@ -83,9 +83,9 @@ void test_PID_5s(float consigne_vitesse) {
     uint32_t last_pid_time = start_time;
 
     int32_t last_enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
-    int32_t last_enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
-    int32_t last_enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
-    int32_t last_enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+    int32_t last_enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+    int32_t last_enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+    int32_t last_enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
 
     while ((HAL_GetTick() - start_time) < 3000) {
         HAL_IWDG_Refresh(&hiwdg);
@@ -97,9 +97,9 @@ void test_PID_5s(float consigne_vitesse) {
             float dt = delta_t_ms / 1000.0f;
 
             int32_t enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
-            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
-            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
-            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
+            int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
+            int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
 
             int32_t d1 = enc1 - last_enc1;
             int32_t d2 = enc2 - last_enc2;
@@ -111,9 +111,9 @@ void test_PID_5s(float consigne_vitesse) {
             if (d3 >  32767) d3 -= 65536; if (d3 < -32768) d3 += 65536;
             if (d4 >  32767) d4 -= 65536; if (d4 < -32768) d4 += 65536;
 
-            float v1 = (d1 / 1320.0f) / dt;
-            float v2 = (d2 / 1320.0f) / dt;
-            float v3 = (d3 / 1320.0f) / dt;
+            float v1 = - (d1 / 1320.0f) / dt;
+            float v2 = - (d2 / 1320.0f) / dt;
+            float v3 = - (d3 / 1320.0f) / dt;
             float v4 = (d4 / 1320.0f) / dt;
 
             float cmd1 = calculer_commande_PID(&pid1, consigne_vitesse, v1, dt);
@@ -121,10 +121,10 @@ void test_PID_5s(float consigne_vitesse) {
             float cmd3 = calculer_commande_PID(&pid3, consigne_vitesse, v3, dt);
             float cmd4 = calculer_commande_PID(&pid4, consigne_vitesse, v4, dt);
 
-            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1); // motor 4
-            //set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2); // motor 3
-            //set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3); // motor 1
-            //set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, -cmd4); // motor 2
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
+            //set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
+            //set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
+            //set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
 
             last_enc1 = enc1; last_enc2 = enc2;
             last_enc3 = enc3; last_enc4 = enc4;
@@ -219,21 +219,25 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             int32_t enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
             int32_t enc4 = (int32_t)__HAL_TIM_GET_COUNTER(&htim5);
 
-            int32_t d1 = (enc1 - last_enc1);
-            int32_t d2 = (enc2 - last_enc2);
-            int32_t d3 = (enc3 - last_enc3);
-            int32_t d4 = (enc4 - last_enc4);
+            int32_t d1 = enc1 - last_enc1;
+            int32_t d2 = enc2 - last_enc2;
+            int32_t d3 = enc3 - last_enc3;
+            int32_t d4 = enc4 - last_enc4;
 
             if (d1 >  32767) d1 -= 65536; if (d1 < -32768) d1 += 65536;
             if (d2 >  32767) d2 -= 65536; if (d2 < -32768) d2 += 65536;
             if (d3 >  32767) d3 -= 65536; if (d3 < -32768) d3 += 65536;
             if (d4 >  32767) d4 -= 65536; if (d4 < -32768) d4 += 65536;
 
-            // on met a jour la position du robot, pour savoir ce qu'il parcouru, et ce qu'il reste a parcourir
-            pos1 += d1; pos2 += d2; pos3 += d3; pos4 += d4;
             position_update(d1, d2, d3, d4);
 
-            // calcul des vitesse pour ajuster le PID (1320 ticks pour un tour de roue)
+            d1 *= DIR1;
+            d2 *= DIR2;
+            d3 *= DIR3;
+            d4 *= DIR4;
+
+            pos1 += d1; pos2 += d2; pos3 += d3; pos4 += d4;
+
             float v1 = (d1 / 1320.0f) / dt;
             float v2 = (d2 / 1320.0f) / dt;
             float v3 = (d3 / 1320.0f) / dt;
@@ -261,20 +265,19 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             float cmd3 = calculer_commande_PID(&pid3, vc3, v3, dt);
             float cmd4 = calculer_commande_PID(&pid4, vc4, v4, dt);
 
-            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1); // motor
-            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2); // motor
-            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3); // motor
-            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4); // motor
+            set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
+            set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
+            set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
+            set_motor_pwm(&htim8, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd4);
 
             last_enc1 = enc1; last_enc2 = enc2;
             last_enc3 = enc3; last_enc4 = enc4;
             last_time = now;
 
             char buf[200];
-            int len = snprintf(buf, sizeof(buf),
-                "Enc1:%ld Enc2:%ld Enc3:%ld Enc4:%ld\r\n",
-                enc1, enc2, enc3, enc4);
-            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 5);
+            int len = snprintf(buf, sizeof(buf), "cmd1:%.0f cmd2:%.0f cmd3:%.0f cmd4:%.0f enc1:%f enc2:%f enc3:%f enc4:%f\r\n",
+                     cmd1, cmd2, cmd3, cmd4, enc1, enc2, enc3, enc4);
+            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);
 
             // Conditions d'arret (soit on est sous le seuil; soit le robot accelere aprés etre passé juste à cote du seuil
             if (err_max < SEUIL) {
@@ -419,12 +422,11 @@ void arc_de_cercle(float rayon_m, float angle_deg) {
 
 // --------------------------------------------------------------------------------------
 // recuperer posititon
-
 void position_update(int32_t d1, int32_t d2, int32_t d3, int32_t d4) {
 
-    float r1 = (d1 / (float)PPR) * (PI * DIAMETRE_M) * 100;
-    float r2 = (d2 / (float)PPR) * (PI * DIAMETRE_M) * 100;
-    float r3 = (d3 / (float)PPR) * (PI * DIAMETRE_M) * 100;
+    float r1 = (- d1 / (float)PPR) * (PI * DIAMETRE_M) * 100;
+    float r2 = (- d2 / (float)PPR) * (PI * DIAMETRE_M) * 100;
+    float r3 = (- d3 / (float)PPR) * (PI * DIAMETRE_M) * 100;
     float r4 = (d4 / (float)PPR) * (PI * DIAMETRE_M) * 100;
 
     float vx = ( r1 + r2 + r3 + r4) / 4.0f;
@@ -435,6 +437,3 @@ void position_update(int32_t d1, int32_t d2, int32_t d3, int32_t d4) {
     robot_pos.x += vx * cosf(angle_rad) - vy * sinf(angle_rad);
     robot_pos.y += vx * sinf(angle_rad) + vy * cosf(angle_rad);
 }
-
-
-

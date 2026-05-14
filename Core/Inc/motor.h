@@ -25,6 +25,11 @@ extern "C" {
 
 #define RAYON_ROBOT_M   0.2
 
+#define DIR1 (-1)
+#define DIR2 (-1)
+#define DIR3 (-1)
+#define DIR4 (+1)
+
 
 
 // PID
