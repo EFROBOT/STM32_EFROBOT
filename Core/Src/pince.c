@@ -38,7 +38,7 @@ typedef struct {
 #define MOTOR_FULL_STEPS_PER_REV 200.0f
 #define DRIVER_MICROSTEPS 16.0f
 #define STEPS_PER_REV (MOTOR_FULL_STEPS_PER_REV * DRIVER_MICROSTEPS)
-static float moteur1_rpm = 13.0f;
+static float moteur1_rpm = 30.0f;
 static float moteur2_rpm = 30.0f;
 static float moteur_min_rpm = 4.0f;
 static float moteur_accel_rpm_s = 120.0f;
@@ -47,7 +47,6 @@ static float moteur_accel_rpm_s = 120.0f;
 #define JAW_FULL_CLOSE_MS 750U
 #define JAW_HALF_OPEN_MS 400U
 #define JAW_HALF_CLOSE_MS 400U
-#define ROUTINE_RELEASE_DELAY_MS 2000U
 #define GROUND_SETTLE_DELAY_MS 500U
 
 static StepperMotor_t motors[2];
@@ -56,6 +55,19 @@ static JawCommand_t jaw_cmd;
 static const float M1_GEAR_RATIO = 3.0f;
 static const float M2_GEAR_RATIO = 1.6666667f;
 extern UART_HandleTypeDef huart2;
+extern IWDG_HandleTypeDef hiwdg;
+
+static void Gripper_UpdateHoldPolicy(void);
+static void Jaw_Update(void);
+
+static void Watchdog_RefreshSafe(void) { (void)HAL_IWDG_Refresh(&hiwdg); }
+static void DelayWithWatchdog(uint32_t delay_ms) {
+  while (delay_ms-- > 0U) {
+    Jaw_Update();
+    Watchdog_RefreshSafe();
+    HAL_Delay(1U);
+  }
+}
 
 static void Debug_Log(const char *msg) {
   HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), 50U);
@@ -67,9 +79,6 @@ static void Debug_Logf(const char *prefix, float value) {
     HAL_UART_Transmit(&huart2, (uint8_t *)buf, (uint16_t)len, 50U);
   }
 }
-
-static void Gripper_UpdateHoldPolicy(void);
-static void Jaw_Update(void);
 
 static void Motor_SetEnable(uint8_t motor_id, uint8_t enable) {
   if (motor_id > 1U)
@@ -150,22 +159,20 @@ static void Gripper_UpdateHoldPolicy(void) {
   if (!motors[1].busy)
     Motor_SetEnable(1U, m2_should_hold);
 }
-
 static uint8_t Motor_WaitIdle(uint8_t motor_id, uint32_t timeout_ms) {
-    uint32_t t0 = HAL_GetTick();
-    if (motor_id > 1U) return 0U;
-    while (motors[motor_id].busy) {
-        Motor_Update(&motors[motor_id]);  // ← avance le moteur
-        HAL_IWDG_Refresh(&hiwdg);        // ← nourrit le chien
-        if ((HAL_GetTick() - t0) > timeout_ms) return 0U;
+  uint32_t t0 = HAL_GetTick();
+  if (motor_id > 1U)
+    return 0U;
+  while (motors[motor_id].busy) {
+    Jaw_Update();
+    Watchdog_RefreshSafe();
+    if ((HAL_GetTick() - t0) > timeout_ms) {
+      return 0U;
     }
-    return 1U;
+    HAL_Delay(1U);
+  }
+  return 1U;
 }
-
-
-
-
-
 static void Jaw_StopOutputs(void) {
   HAL_GPIO_WritePin(VERRIN_0_GPIO_Port, VERRIN_0_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(VERRIN_1_GPIO_Port, VERRIN_1_Pin, GPIO_PIN_RESET);
@@ -206,11 +213,11 @@ static void Jaw_Update(void) {
     Gripper_UpdateHoldPolicy();
   }
 }
-
 static uint8_t Jaw_WaitDone(uint32_t timeout_ms) {
   uint32_t t0 = HAL_GetTick();
   while (jaw_cmd.active) {
     Jaw_Update();
+    Watchdog_RefreshSafe();
     if ((HAL_GetTick() - t0) > timeout_ms) {
       return 0U;
     }
@@ -218,7 +225,6 @@ static uint8_t Jaw_WaitDone(uint32_t timeout_ms) {
   }
   return 1U;
 }
-
 static uint8_t Motor_MoveOutputAngle(uint8_t motor_id, float output_angle_deg,
                                      uint8_t cw) {
   float motor_angle = fabsf(output_angle_deg) *
@@ -253,8 +259,11 @@ static uint8_t Gripper_MoveTo(GripperPosition_t target) {
                            ? ANGLE_SOL_DEG
                            : (target == POS_NAVIGATION
                                   ? ANGLE_NAV_DEG
-                                  : (target == POS_UNLOAD ? ANGLE_UNLOAD_DEG
-                                                          : ANGLE_HOMOLOGATION_DEG));
+                                  : (target == POS_UNLOAD
+                                         ? ANGLE_UNLOAD_DEG
+                                         : (target == POS_UNLOAD_SAFE_CLOSE
+                                                ? ANGLE_UNLOAD_SAFE_CLOSE_DEG
+                                                : ANGLE_HOMOLOGATION_DEG)));
   float delta = target_angle - gripper.m1_angle_deg;
   if (fabsf(delta) > 0.01f) {
     if (!Motor_MoveOutputAngle(0U, fabsf(delta), delta >= 0.0f ? 1U : 0U))
@@ -282,7 +291,7 @@ static uint8_t Gripper_RetrieveAndGoUnload(uint8_t do_rotate) {
                            ? ((float)motors[0].steps_done / (float)motors[0].total_steps)
                            : 1.0f;
       float current_angle = descend_start + descend_delta * progress;
-      if (!opened && current_angle < ANGLE_NAV_DEG && gripper.jaw_state != GRIPPER_OPEN &&
+      if (!opened && current_angle < (ANGLE_NAV_DEG - 20) && gripper.jaw_state != GRIPPER_OPEN &&
           !jaw_cmd.active) {
         Jaw_StartAsync(GRIPPER_OPEN);
         Debug_Logf("[PINCE] jaw open started at m1_deg=", current_angle);
@@ -290,6 +299,7 @@ static uint8_t Gripper_RetrieveAndGoUnload(uint8_t do_rotate) {
       }
       if ((HAL_GetTick() - t0) > ACTION_TIMEOUT_MS)
         return 0U;
+      Watchdog_RefreshSafe();
       HAL_Delay(1U);
     }
     gripper.m1_angle_deg = ANGLE_SOL_DEG;
@@ -301,7 +311,7 @@ static uint8_t Gripper_RetrieveAndGoUnload(uint8_t do_rotate) {
     Gripper_ActuateJaw(GRIPPER_OPEN);
   Debug_Log("[PINCE] m1 reached ground, disable m1\r\n");
   Motor_SetEnable(0U, 0U);
-  HAL_Delay(GROUND_SETTLE_DELAY_MS);
+  DelayWithWatchdog(GROUND_SETTLE_DELAY_MS);
   Debug_Log("[PINCE] settle done, closing jaw\r\n");
   Gripper_ActuateJaw(GRIPPER_CLOSED);
   Gripper_RecalibrateZeroAtGround();
@@ -336,6 +346,7 @@ static uint8_t Gripper_RetrieveAndGoUnload(uint8_t do_rotate) {
       }
       if ((HAL_GetTick() - t0) > ACTION_TIMEOUT_MS)
         return 0U;
+      Watchdog_RefreshSafe();
       HAL_Delay(1U);
     }
     gripper.m1_angle_deg = target_angle;
@@ -347,7 +358,12 @@ static uint8_t Gripper_RetrieveAndGoUnload(uint8_t do_rotate) {
   gripper.m2_lock_with_object = 0U;
   Gripper_UpdateHoldPolicy();
   Gripper_ActuateJaw(GRIPPER_HALF_OPEN);
-  HAL_Delay(ROUTINE_RELEASE_DELAY_MS);
+  if (!Motor_MoveOutputAngle(0U, fabsf(ANGLE_UNLOAD_SAFE_CLOSE_DEG - gripper.m1_angle_deg),
+                             ANGLE_UNLOAD_SAFE_CLOSE_DEG >= gripper.m1_angle_deg ? 1U : 0U))
+    return 0U;
+  gripper.m1_angle_deg = ANGLE_UNLOAD_SAFE_CLOSE_DEG;
+  gripper.position = POS_UNLOAD_SAFE_CLOSE;
+  Gripper_UpdateHoldPolicy();
   Gripper_ActuateJaw(GRIPPER_HALF_CLOSED);
   gripper.has_object = 0U;
   gripper.m2_lock_with_object = 0U;
@@ -364,10 +380,10 @@ uint8_t Pince_GoToNav(void) {
 }
 
 uint8_t Pince_Pos_Homolog(void) {
-  Gripper_ActuateJaw(GRIPPER_OPEN);
   if (!Motor_MoveOutputAngle(0U, fabsf(ANGLE_HOMOLOGATION_DEG - gripper.m1_angle_deg),
                              ANGLE_HOMOLOGATION_DEG >= gripper.m1_angle_deg ? 1U : 0U))
     return 0U;
+  Gripper_ActuateJaw(GRIPPER_OPEN);
   gripper.m1_angle_deg = ANGLE_HOMOLOGATION_DEG;
   gripper.position = POS_ROTATE_INTERMEDIATE;
   gripper.has_object = 0U;

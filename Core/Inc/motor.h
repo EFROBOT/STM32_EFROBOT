@@ -9,7 +9,7 @@ extern "C" {
 #include "stm32l4xx_hal.h"
 
 
-#define PPR           1320
+#define PPR           1180
 #define DIAMETRE_M    0.08f
 #define PI            3.14159f
 
@@ -17,6 +17,7 @@ extern "C" {
 #define V_MIN         0.4f
 #define SEUIL         100
 #define ZONE_DECEL    800
+#define ACCEL_STEP    0.1
 
 #define PWM_MAX       60000
 #define PWM_MIN       20000

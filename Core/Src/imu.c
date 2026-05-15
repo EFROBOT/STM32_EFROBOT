@@ -31,3 +31,4 @@ int16_t imu_get_heading(I2C_HandleTypeDef *hi2c) {
 
     return (int16_t)((buf[1] << 8) | buf[0]) / 16;
 }
+

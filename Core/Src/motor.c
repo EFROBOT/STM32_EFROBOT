@@ -145,7 +145,6 @@ void test_PID_5s(float consigne_vitesse) {
 
 // --------------------------------------------------------------------------------------
 
-
 float calculer_vitesse(int32_t erreur, int32_t cible)
 {
     float vc = 0.0f;
@@ -170,9 +169,8 @@ float calculer_vitesse(int32_t erreur, int32_t cible)
     return vc;
 }
 
-
 void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
-	stop_mouvement = 0;
+    stop_mouvement = 0;
     int32_t ticks_cible = distance_en_ticks(cm);
 
     pid1.integrale = 0; pid1.erreur_precedente = 0;
@@ -199,14 +197,13 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
     int32_t cible3 = (int32_t)(vinit3 * ticks_cible);
     int32_t cible4 = (int32_t)(vinit4 * ticks_cible);
 
-    // Variable pour l'anti-dépassement
     int32_t err_max_precedent = ticks_cible;
+    float v_ramp = V_MIN;
 
     while (1) {
         HAL_IWDG_Refresh(&hiwdg);
 
         if (stop_mouvement) break;
-
         if ((HAL_GetTick() - timeout) > 10000) break;
 
         uint32_t now = HAL_GetTick();
@@ -256,6 +253,12 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
 
             float vitesse_base = calculer_vitesse(err_max, ticks_cible);
 
+            // Application du ramp-up
+            if (vitesse_base > v_ramp) {
+                vitesse_base = v_ramp;
+            }
+            v_ramp += ACCEL_STEP;
+
             float vc1 = vitesse_base * vinit1;
             float vc2 = vitesse_base * vinit2;
             float vc3 = vitesse_base * vinit3;
@@ -281,7 +284,6 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             if (vinit3 < 0 && cmd3 > 0) cmd3 = 0;
             if (vinit4 < 0 && cmd4 > 0) cmd4 = 0;
 
-
             set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
             set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
             set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
@@ -296,7 +298,6 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
                       enc1, enc2, enc3, enc4);
             HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);
 
-            // Conditions d'arret (soit on est sous le seuil; soit le robot accelere aprés etre passé juste à cote du seuil
             if (err_max < SEUIL) {
                 break;
             }

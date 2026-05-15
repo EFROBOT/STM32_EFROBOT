@@ -125,11 +125,11 @@ void Position_robot_init(Robot_Pos *p, int team) {
     if (team == 0) {
         p->x = 16;
         p->y = 184.0;
-        p->angle = 270;
+        p->angle = 0;
     } else if (team == 1) {
         p->x = 284;
         p->y = 184;
-        p->angle = 270;
+        p->angle = 0;
     }
 }
 void set_position(float new_x, float new_y, float new_angle) {
@@ -202,10 +202,7 @@ void traiter_commande(char *cmd) {
     	mouvement_pince_termine();
 
     } else if (strncmp(cmd, "Pince Navigation", 16) == 0) {
-    	Pince_GoToNav();
-
-    } else if (strncmp(cmd, "Pince Homologation", 18) == 0) {
-    	Pince_Pos_Homolog();
+    	Pince_GoToNav(); // a remetre pour le mode nav
 
     } else if (strncmp(cmd, "RAH ", 4) == 0) {
         param1 = atoff(cmd + 4);
@@ -373,7 +370,8 @@ int main(void)
 
 
   //-------------------------------------------------------------
-  //Pince_Init();
+
+  Pince_Init();
   HAL_TIM_Base_Start_IT(&htim6);
 
 
@@ -428,7 +426,9 @@ int main(void)
   //Servo_SetAngle(100);
 
   //safe_delay(1000);
+  //safe_delay(1000);
   //avancer(1);
+  //safe_delay(1000);
 
   /*
    safe_delay(1000);
@@ -463,8 +463,6 @@ int main(void)
 
 
   //safe_delay(1000);
-  //avancer(1);
-  //safe_delay(1000);
   //reculer(1);
   //safe_delay(1000);
 
@@ -473,6 +471,8 @@ int main(void)
 
   //envoyer_position();
   //safe_delay(1000);
+
+  safe_delay(1000);
 
 
 
@@ -1234,6 +1234,11 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+  if (htim->Instance == TIM6) {
+    Pince_UpdateSchedulerTick();
+  }
+}
 
 /* USER CODE END 4 */
 
