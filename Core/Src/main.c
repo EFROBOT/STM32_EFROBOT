@@ -121,17 +121,21 @@ void Position_robot_init(Robot_Pos *p, int team) {
     char buf[64];
     int len = snprintf(buf, sizeof(buf), "[DBG] Position_robot_init team=%d\r\n", team);
     HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);  // ← trace qui appelle ça
-
+    imu_reset(&hi2c1);
+    safe_delay(650);
+    imu_init(&hi2c1, &hiwdg);
+    safe_delay(100);
     if (team == 0) {
         p->x = 16;
         p->y = 184.0;
-        p->angle = 0;
+        p->angle = 270;
     } else if (team == 1) {
         p->x = 284;
         p->y = 184;
-        p->angle = 0;
+        p->angle = 270;
     }
 }
+
 void set_position(float new_x, float new_y, float new_angle) {
 	robot_pos.x = new_x;
 	robot_pos.y = new_y;
@@ -196,10 +200,15 @@ void traiter_commande(char *cmd) {
 
 	//-----------------------------------------------------
 	// Pince Option
-    } else if (strncmp(cmd, "Recuperer caisse ", 17) == 0) {
-    	sscanf(cmd + 17, "%d", &recup);
-    	Pince_RecupererEtStocker(recup);
-    	mouvement_pince_termine();
+    } else if (strncmp(cmd, "Pince_RecupererEtStocker", 24) == 0) {
+		sscanf(cmd + 24, "%d", &recup);
+		Pince_RecupererEtStocker(recup);
+		mouvement_pince_termine();
+
+    } else if (strncmp(cmd, "Pince_RecupererAvancerEtStocker", 31) == 0) {
+        sscanf(cmd + 31, "%d", &recup);
+        Pince_RecupererAvancerEtStocker(recup);
+        mouvement_pince_termine();
 
     } else if (strncmp(cmd, "Pince Navigation", 16) == 0) {
     	Pince_GoToNav(); // a remetre pour le mode nav
@@ -427,7 +436,6 @@ int main(void)
 
   //safe_delay(1000);
   //safe_delay(1000);
-  //avancer(1);
   //safe_delay(1000);
 
   /*
@@ -474,6 +482,7 @@ int main(void)
 
   safe_delay(1000);
 
+  safe_delay(1000);
 
 
   //lacher_caisses();

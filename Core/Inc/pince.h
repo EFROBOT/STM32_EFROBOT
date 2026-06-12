@@ -31,6 +31,7 @@ typedef enum {
 void Pince_Init(void);
 void Pince_UpdateSchedulerTick(void);
 uint8_t Pince_RecupererEtStocker(uint8_t rotation_active);
+uint8_t Pince_RecupererAvancerEtStocker(uint8_t rotation_active);
 uint8_t Pince_GoToNav(void);
 uint8_t Pince_Pos_Homolog(void);
 

@@ -8,8 +8,8 @@
 ../Core/Src/motor.c:172:6:move	39
 ../Core/Src/motor.c:317:6:avancer	1
 ../Core/Src/motor.c:321:6:reculer	1
-../Core/Src/motor.c:325:6:droite	1
-../Core/Src/motor.c:329:6:gauche	1
+../Core/Src/motor.c:325:6:gauche	1
+../Core/Src/motor.c:329:6:droite	1
 ../Core/Src/motor.c:333:6:diagonale_droite	1
 ../Core/Src/motor.c:337:6:diagonale_gauche	1
 ../Core/Src/motor.c:341:6:rotation_gauche	1

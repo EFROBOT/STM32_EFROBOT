@@ -32,3 +32,8 @@ int16_t imu_get_heading(I2C_HandleTypeDef *hi2c) {
     return (int16_t)((buf[1] << 8) | buf[0]) / 16;
 }
 
+void imu_reset(I2C_HandleTypeDef *hi2c) {
+    uint8_t rst = 0x20;
+    HAL_I2C_Mem_Write(hi2c, BNO055_ADDR, 0x3F, 1, &rst, 1, 100);
+}
+

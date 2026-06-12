@@ -1,4 +1,5 @@
 #include "pince.h"
+#include "motor.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -38,16 +39,17 @@ typedef struct {
 #define MOTOR_FULL_STEPS_PER_REV 200.0f
 #define DRIVER_MICROSTEPS 16.0f
 #define STEPS_PER_REV (MOTOR_FULL_STEPS_PER_REV * DRIVER_MICROSTEPS)
-static float moteur1_rpm = 30.0f;
-static float moteur2_rpm = 30.0f;
+static float moteur1_rpm = 150.0f;
+static float moteur2_rpm = 75.0f;
 static float moteur_min_rpm = 4.0f;
-static float moteur_accel_rpm_s = 120.0f;
+static float moteur_accel_rpm_s = 225.0f;
+static float avance_distance_m = 0.065f;
 #define ACTION_TIMEOUT_MS 20000U
 #define JAW_FULL_OPEN_MS 750U
 #define JAW_FULL_CLOSE_MS 750U
 #define JAW_HALF_OPEN_MS 400U
 #define JAW_HALF_CLOSE_MS 400U
-#define GROUND_SETTLE_DELAY_MS 500U
+#define GROUND_SETTLE_DELAY_MS 50U
 
 static StepperMotor_t motors[2];
 static GripperState_t gripper;
@@ -70,6 +72,14 @@ static void DelayWithWatchdog(uint32_t delay_ms) {
 }
 
 static void Debug_Log(const char *msg) {
+  HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), 50U);
+}
+
+
+static void Pince_NotifierFinMouvement(uint8_t succes) {
+  const char *msg_ok = "Mouv Pince Ok\r\n";
+  const char *msg_err = "Mouv Pince Err\r\n";
+  const char *msg = succes ? msg_ok : msg_err;
   HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), 50U);
 }
 static void Debug_Logf(const char *prefix, float value) {
@@ -371,7 +381,125 @@ static uint8_t Gripper_RetrieveAndGoUnload(uint8_t do_rotate) {
   return 1U;
 }
 uint8_t Pince_RecupererEtStocker(uint8_t rotation_active) {
-  return Gripper_RetrieveAndGoUnload(rotation_active ? 1U : 0U);
+  uint8_t succes = Gripper_RetrieveAndGoUnload(rotation_active ? 1U : 0U);
+  Pince_NotifierFinMouvement(succes);
+  return succes;
+}
+
+uint8_t Pince_RecupererAvancerEtStocker(uint8_t rotation_active) {
+  float descend_start = gripper.m1_angle_deg;
+  float descend_delta = ANGLE_SOL_DEG - descend_start;
+  Debug_Log("[PINCE] start retrieve+advance cycle\r\n");
+  Debug_Logf("[PINCE] descend_start_deg=", descend_start);
+  Debug_Logf("[PINCE] descend_delta_deg=", descend_delta);
+  if (fabsf(descend_delta) > 0.01f) {
+    Motor_StartMoveAngle(0U, fabsf(descend_delta) * M1_GEAR_RATIO,
+                         descend_delta >= 0.0f ? 1U : 0U);
+    uint8_t opened = 0U;
+    uint32_t t0 = HAL_GetTick();
+    while (motors[0].busy) {
+      Jaw_Update();
+      float progress = motors[0].total_steps
+                           ? ((float)motors[0].steps_done / (float)motors[0].total_steps)
+                           : 1.0f;
+      float current_angle = descend_start + descend_delta * progress;
+      if (!opened && current_angle < (ANGLE_NAV_DEG - 20) && gripper.jaw_state != GRIPPER_OPEN &&
+          !jaw_cmd.active) {
+        Jaw_StartAsync(GRIPPER_OPEN);
+        Debug_Logf("[PINCE] jaw open started at m1_deg=", current_angle);
+        opened = 1U;
+      }
+      if ((HAL_GetTick() - t0) > ACTION_TIMEOUT_MS) {
+        Pince_NotifierFinMouvement(0U);
+        return 0U;
+      }
+      Watchdog_RefreshSafe();
+      HAL_Delay(1U);
+    }
+    gripper.m1_angle_deg = ANGLE_SOL_DEG;
+  }
+  gripper.position = POS_GROUND;
+  if (jaw_cmd.active && !Jaw_WaitDone(ACTION_TIMEOUT_MS)) {
+    Pince_NotifierFinMouvement(0U);
+    return 0U;
+  }
+  if (gripper.jaw_state != GRIPPER_OPEN)
+    Gripper_ActuateJaw(GRIPPER_OPEN);
+  Debug_Log("[PINCE] m1 reached ground, disable m1\r\n");
+  Motor_SetEnable(0U, 0U);
+  DelayWithWatchdog(GROUND_SETTLE_DELAY_MS);
+  Debug_Log("[PINCE] settle done, closing jaw\r\n");
+  Gripper_ActuateJaw(GRIPPER_CLOSED);
+  Gripper_RecalibrateZeroAtGround();
+  Debug_Log("[PINCE] recalibrated at ground\r\n");
+  gripper.has_object = 1U;
+  gripper.m2_lock_with_object = 1U;
+  Gripper_UpdateHoldPolicy();
+  float target_angle = ANGLE_UNLOAD_DEG;
+  float rise_delta = target_angle - gripper.m1_angle_deg;
+  Debug_Logf("[PINCE] rise_target_deg=", target_angle);
+  if (fabsf(rise_delta) > 0.01f) {
+    Motor_StartMoveAngle(0U, fabsf(rise_delta) * M1_GEAR_RATIO,
+                         rise_delta >= 0.0f ? 1U : 0U);
+    uint8_t avance_started = 0U;
+    uint8_t rotation_started = 0U;
+    const float angle_declenchement_avance_deg = 15.0f;
+    uint32_t t0 = HAL_GetTick();
+    while (motors[0].busy) {
+      Jaw_Update();
+      float progress = motors[0].total_steps
+                           ? ((float)motors[0].steps_done / (float)motors[0].total_steps)
+                           : 1.0f;
+      float current_angle = gripper.m1_angle_deg + rise_delta * progress;
+      if (!rotation_started && current_angle > ANGLE_ROTATION_DEG) {
+        Motor_StartMoveAngle(1U, (rotation_active ? M2_ROTATION_DEG : M2_ALIGNEMENT_DEG) *
+                                     M2_GEAR_RATIO,
+                             rotation_active ? 1U : 0U);
+        Debug_Logf("[PINCE] m2 rotation started at m1_deg=", current_angle);
+        rotation_started = 1U;
+      }
+      if (!avance_started && rotation_started &&
+          current_angle > angle_declenchement_avance_deg) {
+        avance_started = 1U;
+        Debug_Log("[PINCE] avance robot start\r\n");
+        avancer(avance_distance_m);
+      }
+      if (current_angle > ANGLE_NAV_DEG) {
+        gripper.m2_lock_with_object = 0U;
+        Gripper_UpdateHoldPolicy();
+      }
+      if ((HAL_GetTick() - t0) > ACTION_TIMEOUT_MS) {
+        Pince_NotifierFinMouvement(0U);
+        return 0U;
+      }
+      Watchdog_RefreshSafe();
+      HAL_Delay(1U);
+    }
+    gripper.m1_angle_deg = target_angle;
+  }
+  if (!Motor_WaitIdle(1U, ACTION_TIMEOUT_MS)) {
+    Pince_NotifierFinMouvement(0U);
+    return 0U;
+  }
+  Debug_Log("[PINCE] m1+m2 done, unload sequence\r\n");
+  gripper.position = POS_UNLOAD;
+  gripper.m2_lock_with_object = 0U;
+  Gripper_UpdateHoldPolicy();
+  Gripper_ActuateJaw(GRIPPER_HALF_OPEN);
+  if (!Motor_MoveOutputAngle(0U, fabsf(ANGLE_UNLOAD_SAFE_CLOSE_DEG - gripper.m1_angle_deg),
+                             ANGLE_UNLOAD_SAFE_CLOSE_DEG >= gripper.m1_angle_deg ? 1U : 0U)) {
+    Pince_NotifierFinMouvement(0U);
+    return 0U;
+  }
+  gripper.m1_angle_deg = ANGLE_UNLOAD_SAFE_CLOSE_DEG;
+  gripper.position = POS_UNLOAD_SAFE_CLOSE;
+  Gripper_UpdateHoldPolicy();
+  Gripper_ActuateJaw(GRIPPER_HALF_CLOSED);
+  gripper.has_object = 0U;
+  gripper.m2_lock_with_object = 0U;
+  Gripper_UpdateHoldPolicy();
+  Pince_NotifierFinMouvement(1U);
+  return 1U;
 }
 
 

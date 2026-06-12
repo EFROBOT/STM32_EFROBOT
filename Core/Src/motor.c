@@ -322,11 +322,11 @@ void reculer(float metre){
 	move(-1, -1, -1, -1, metre);
 }
 
-void droite(float metre){
+void gauche(float metre){
 	move( 1, -1, -1,  1, metre);
 }
 
-void gauche(float metre){
+void droite(float metre){
 	move(-1,  1,  1, -1, metre);
 }
 
