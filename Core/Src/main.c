@@ -160,11 +160,6 @@ void mouvement_termine(void) {
     HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
 }
 
-void mouvement_pince_termine(void) {
-    char buf[64];
-    int len = snprintf(buf, sizeof(buf), "Mouv Pince Ok\r\n");
-    HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 10);
-}
 
 void traiter_commande(char *cmd) {
     // Trim '\r' éventuel
@@ -203,12 +198,7 @@ void traiter_commande(char *cmd) {
     } else if (strncmp(cmd, "Pince_RecupererEtStocker", 24) == 0) {
 		sscanf(cmd + 24, "%d", &recup);
 		Pince_RecupererEtStocker(recup);
-		mouvement_pince_termine();
-
-    } else if (strncmp(cmd, "Pince_RecupererAvancerEtStocker", 31) == 0) {
-        sscanf(cmd + 31, "%d", &recup);
-        Pince_RecupererAvancerEtStocker(recup);
-        mouvement_pince_termine();
+		mouvement_termine();
 
     } else if (strncmp(cmd, "Pince Navigation", 16) == 0) {
     	Pince_GoToNav(); // a remetre pour le mode nav
