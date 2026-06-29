@@ -32,6 +32,7 @@
 #include "motor.h"
 #include "imu.h"
 #include "pince.h"
+#include "trajectory.h"
 
 /* USER CODE END Includes */
 
@@ -128,11 +129,11 @@ void Position_robot_init(Robot_Pos *p, int team) {
     if (team == 0) {
         p->x = 16;
         p->y = 184.0;
-        p->angle = 270;
+        p->angle = 0;
     } else if (team == 1) {
         p->x = 284;
         p->y = 184;
-        p->angle = 270;
+        p->angle = 0;
     }
 }
 
@@ -202,6 +203,11 @@ void traiter_commande(char *cmd) {
 
     } else if (strncmp(cmd, "Pince Navigation", 16) == 0) {
     	Pince_GoToNav(); // a remetre pour le mode nav
+    	mouvement_termine();
+
+    } else if (strncmp(cmd, "Pince Curseur", 13) == 0) {
+    	Pince_Pos_Curseur(); // thermomètre de samuel
+    	mouvement_termine();
 
     } else if (strncmp(cmd, "RAH ", 4) == 0) {
         param1 = atoff(cmd + 4);
@@ -473,6 +479,17 @@ int main(void)
   safe_delay(1000);
 
   safe_delay(1000);
+  safe_delay(1000);
+  /*Trajectory traj;
+  traj_init(&traj);
+
+  traj_avancer(&traj, 0.50f);
+  traj_gauche(&traj,  0.30f);
+  traj_avancer(&traj, 0.20f);
+  traj_rotation_gauche(&traj, 90.0f);
+
+  traj_execute(&traj);*/
+
 
 
   //lacher_caisses();

@@ -1,5 +1,5 @@
-Core/Src/motor.o: ../Core/Src/motor.c ../Core/Inc/motor.h \
- ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal.h \
+Core/Src/trajectory.o: ../Core/Src/trajectory.c ../Core/Inc/trajectory.h \
+ ../Core/Inc/motor.h ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal.h \
  ../Core/Inc/stm32l4xx_hal_conf.h \
  ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal_rcc.h \
  ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal_def.h \
@@ -32,6 +32,7 @@ Core/Src/motor.o: ../Core/Src/motor.c ../Core/Inc/motor.h \
  ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal_uart.h \
  ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal_uart_ex.h \
  ../Core/Inc/imu.h ../Core/Inc/main.h
+../Core/Inc/trajectory.h:
 ../Core/Inc/motor.h:
 ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal.h:
 ../Core/Inc/stm32l4xx_hal_conf.h:

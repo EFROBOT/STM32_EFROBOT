@@ -23,6 +23,6 @@
 ../Core/Src/pince.c:287:16:Gripper_RetrieveAndGoUnload	26
 ../Core/Src/pince.c:383:9:Pince_RecupererEtStocker	2
 ../Core/Src/pince.c:390:9:Pince_GoToNav	1
-../Core/Src/pince.c:394:9:Pince_Pos_Homolog	3
-../Core/Src/pince.c:407:6:Pince_UpdateSchedulerTick	1
-../Core/Src/pince.c:412:6:Pince_Init	2
+../Core/Src/pince.c:394:9:Pince_Pos_Curseur	1
+../Core/Src/pince.c:398:6:Pince_UpdateSchedulerTick	1
+../Core/Src/pince.c:403:6:Pince_Init	2

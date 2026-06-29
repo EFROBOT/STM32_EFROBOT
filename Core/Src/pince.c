@@ -273,7 +273,7 @@ static uint8_t Gripper_MoveTo(GripperPosition_t target) {
                                          ? ANGLE_UNLOAD_DEG
                                          : (target == POS_UNLOAD_SAFE_CLOSE
                                                 ? ANGLE_UNLOAD_SAFE_CLOSE_DEG
-                                                : ANGLE_HOMOLOGATION_DEG)));
+                                                : ANGLE_CURSEUR_DEG)));
   float delta = target_angle - gripper.m1_angle_deg;
   if (fabsf(delta) > 0.01f) {
     if (!Motor_MoveOutputAngle(0U, fabsf(delta), delta >= 0.0f ? 1U : 0U))
@@ -391,17 +391,8 @@ uint8_t Pince_GoToNav(void) {
   return Gripper_MoveTo(POS_NAVIGATION);
 }
 
-uint8_t Pince_Pos_Homolog(void) {
-  if (!Motor_MoveOutputAngle(0U, fabsf(ANGLE_HOMOLOGATION_DEG - gripper.m1_angle_deg),
-                             ANGLE_HOMOLOGATION_DEG >= gripper.m1_angle_deg ? 1U : 0U))
-    return 0U;
-  Gripper_ActuateJaw(GRIPPER_OPEN);
-  gripper.m1_angle_deg = ANGLE_HOMOLOGATION_DEG;
-  gripper.position = POS_ROTATE_INTERMEDIATE;
-  gripper.has_object = 0U;
-  gripper.m2_lock_with_object = 0U;
-  Gripper_UpdateHoldPolicy();
-  return 1U;
+uint8_t Pince_Pos_Curseur(void) {
+  return Gripper_MoveTo(POS_CURSEUR);
 }
 
 void Pince_UpdateSchedulerTick(void) {

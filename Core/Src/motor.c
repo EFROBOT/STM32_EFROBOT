@@ -66,14 +66,19 @@ void PID_Vitesse_Init(PID_Vitesse_t *p, float kp, float ki, float kd) {
     p->erreur_precedente = 0;
 }
 
-float calculer_commande_PID(PID_Vitesse_t *p, float consigne,
-                             float vitesse_mesuree, float dt)
-{
-    float erreur = consigne - vitesse_mesuree;
-    p->integrale += erreur * dt;
-    float derivee = (erreur - p->erreur_precedente) / dt;
-    p->erreur_precedente = erreur;
-    return (p->kp * erreur) + (p->ki * p->integrale) + (p->kd * derivee);
+float calculer_commande_PID(PID_Vitesse_t *pid, float consigne, float mesure, float dt) {
+    float erreur = consigne - mesure;
+
+    pid->integrale += erreur * dt;
+
+    float max_integrale = 5000.0f;
+    if (pid->integrale > max_integrale)  pid->integrale = max_integrale;
+    if (pid->integrale < -max_integrale) pid->integrale = -max_integrale;
+
+    float derivee = (erreur - pid->erreur_precedente) / dt;
+    pid->erreur_precedente = erreur;
+
+    return (pid->kp * erreur) + (pid->ki * pid->integrale) + (pid->kd * derivee);
 }
 
 // --------------------------------------------------------------------------------------
@@ -183,6 +188,8 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
     __HAL_TIM_SET_COUNTER(&htim4, 0);
     __HAL_TIM_SET_COUNTER(&htim5, 0);
 
+    HAL_Delay(20);
+
     int32_t last_enc1 = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
     int32_t last_enc2 = (int32_t)__HAL_TIM_GET_COUNTER(&htim3);
     int32_t last_enc3 = (int32_t)__HAL_TIM_GET_COUNTER(&htim4);
@@ -190,7 +197,7 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
 
     int32_t pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     uint32_t last_time = HAL_GetTick();
-    uint32_t timeout = HAL_GetTick();
+    uint32_t timeout   = HAL_GetTick();
 
     int32_t cible1 = (int32_t)(vinit1 * ticks_cible);
     int32_t cible2 = (int32_t)(vinit2 * ticks_cible);
@@ -198,7 +205,10 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
     int32_t cible4 = (int32_t)(vinit4 * ticks_cible);
 
     int32_t err_max_precedent = ticks_cible;
-    float v_ramp = V_MIN;
+    float   v_ramp            = V_MIN;
+
+    int32_t pos1_prev = 0, pos2_prev = 0, pos3_prev = 0, pos4_prev = 0;
+    uint32_t stall_timer = HAL_GetTick();
 
     while (1) {
         HAL_IWDG_Refresh(&hiwdg);
@@ -206,7 +216,7 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
         if (stop_mouvement) break;
         if ((HAL_GetTick() - timeout) > 10000) break;
 
-        uint32_t now = HAL_GetTick();
+        uint32_t now      = HAL_GetTick();
         uint32_t delta_ms = now - last_time;
 
         if (delta_ms >= 50) {
@@ -229,10 +239,7 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
 
             position_update(d1, d2, d3, d4);
 
-            d1 *= DIR1;
-            d2 *= DIR2;
-            d3 *= DIR3;
-            d4 *= DIR4;
+            d1 *= DIR1; d2 *= DIR2; d3 *= DIR3; d4 *= DIR4;
 
             pos1 += d1; pos2 += d2; pos3 += d3; pos4 += d4;
 
@@ -253,11 +260,12 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
 
             float vitesse_base = calculer_vitesse(err_max, ticks_cible);
 
-            // Application du ramp-up
-            if (vitesse_base > v_ramp) {
-                vitesse_base = v_ramp;
-            }
+            if (vitesse_base > v_ramp) vitesse_base = v_ramp;
             v_ramp += ACCEL_STEP;
+
+            if (vitesse_base < 0.05f) {
+                vitesse_base = 0.0f;
+            }
 
             float vc1 = vitesse_base * vinit1;
             float vc2 = vitesse_base * vinit2;
@@ -274,16 +282,6 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             if (vc3 == 0.0f) { pid3.integrale = 0; pid3.erreur_precedente = 0; }
             if (vc4 == 0.0f) { pid4.integrale = 0; pid4.erreur_precedente = 0; }
 
-            if (vinit1 > 0 && cmd1 < 0) cmd1 = 0;
-            if (vinit2 > 0 && cmd2 < 0) cmd2 = 0;
-            if (vinit3 > 0 && cmd3 < 0) cmd3 = 0;
-            if (vinit4 > 0 && cmd4 < 0) cmd4 = 0;
-
-            if (vinit1 < 0 && cmd1 > 0) cmd1 = 0;
-            if (vinit2 < 0 && cmd2 > 0) cmd2 = 0;
-            if (vinit3 < 0 && cmd3 > 0) cmd3 = 0;
-            if (vinit4 < 0 && cmd4 > 0) cmd4 = 0;
-
             set_motor_pwm(&htim1, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd1);
             set_motor_pwm(&htim1, TIM_CHANNEL_3, TIM_CHANNEL_4, cmd2);
             set_motor_pwm(&htim8, TIM_CHANNEL_1, TIM_CHANNEL_2, cmd3);
@@ -293,17 +291,24 @@ void move(float vinit1, float vinit2, float vinit3, float vinit4, float cm) {
             last_enc3 = enc3; last_enc4 = enc4;
             last_time = now;
 
-            char buf[200];
-            int len = snprintf(buf, sizeof(buf), "enc1:%ld enc2:%ld enc3:%ld enc4:%ld\r\n",
-                      enc1, enc2, enc3, enc4);
-            HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, HAL_MAX_DELAY);
-
             if (err_max < SEUIL) {
                 break;
             }
-            if (err_max > err_max_precedent && err_max < 300) {
+
+            // Arret immediat si depassement
+            if (err_max > err_max_precedent && err_max < 500) {
                 break;
             }
+
+            int32_t mouvement_total = abs(pos1 - pos1_prev) + abs(pos2 - pos2_prev)
+                                    + abs(pos3 - pos3_prev) + abs(pos4 - pos4_prev);
+            if (mouvement_total < 10) {
+                if ((HAL_GetTick() - stall_timer) > 500) break;
+            } else {
+                stall_timer = HAL_GetTick();
+            }
+            pos1_prev = pos1; pos2_prev = pos2;
+            pos3_prev = pos3; pos4_prev = pos4;
 
             err_max_precedent = err_max;
         }
@@ -358,9 +363,9 @@ void tourner_vers_angle(float angle_cible) {
     while (diff < -180.0f) diff += 360.0f;
 
     if (diff > 0.0f) {
-        rotation_gauche(diff);
+        rotation_droite(diff);
     } else if (diff < 0.0f) {
-        rotation_droite(-diff);
+        rotation_gauche(-diff);
     }
 
     robot_pos.angle = angle_cible;
@@ -450,6 +455,7 @@ void position_update(int32_t d1, int32_t d2, int32_t d3, int32_t d4) {
     float vx = ( r1 + r2 + r3 + r4) / 4.0f;
     float vy = (-r1 + r2 + r3 - r4) / 4.0f;
 
+    robot_pos.angle = (float)imu_get_heading(&hi2c1);
     float angle_rad = robot_pos.angle * PI / 180.0f;
 
     robot_pos.x += vx * cosf(angle_rad) - vy * sinf(angle_rad);

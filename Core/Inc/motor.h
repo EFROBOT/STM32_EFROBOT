@@ -7,7 +7,7 @@ extern "C" {
 #endif
 
 #include "stm32l4xx_hal.h"
-
+#include "imu.h"
 
 #define PPR           1180
 #define DIAMETRE_M    0.08f
@@ -59,6 +59,7 @@ extern TIM_HandleTypeDef htim5;
 extern TIM_HandleTypeDef htim8;
 extern UART_HandleTypeDef huart2;
 extern IWDG_HandleTypeDef hiwdg;
+extern I2C_HandleTypeDef hi2c1;
 
 // PID define
 extern PID_Vitesse_t pid1, pid2, pid3, pid4;
